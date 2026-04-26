@@ -3,6 +3,7 @@
 ### Training from random init
 不知為啥，跟from ImageNet不同，
 from random 的話，似乎反而是Portion越少的時候需要越小的LR!
+但這不影響啦
 
 ```bash
 cd ./classification
@@ -22,7 +23,7 @@ AUGS="aug4" MAX_RUN=4 SEEDS="42" LRS="7e-4 1e-3 3e-3" PORTIONS="100" DEVICE="cud
 Already done in data_aug
 
 ### Training from SimCLR1
-First train SimCLR models
+#### 1. train SimCLR models
 Remeber to do SimCLR varying batch size (16, 32, 64, 128, 256) and epoch (10, 20, 50, 100, 200, 500) for 100% data fine-tuning first!
 ```bash
 cd ../ # i.e., root dir of this project
@@ -34,10 +35,40 @@ cd ../ # i.e., root dir of this project
 tensorboard --logdir ./SSL/simclr/tb_logs
 ```
 
+#### 2. fine-tune on 100% OCT data
+```bash
+cd ./classification
+./exp/weights_init/scripts/simclr_ft_100_4.sh # 5e-5
+./exp/weights_init/scripts/simclr_ft_100_3.sh # 7e-5
+./exp/weights_init/scripts/simclr_ft_100_1.sh # 1e-4
+./exp/weights_init/scripts/simclr_ft_100_2.sh # 3e-4
+
+
+# 最好也來個ft 10%的? 之後可以做成兩個separate heatmaps?
+# 橫軸是epoch, 縱軸是bs
+./exp/weights_init/scripts/simclr_ft_10_1.sh # 3e-4
+./exp/weights_init/scripts/simclr_ft_10_2.sh # 5e-4
+./exp/weights_init/scripts/simclr_ft_10_3.sh # 7e-4
+
+
+## bs=256 單獨RUN一下
+AUGS="aug4" MAX_RUN=3 SEEDS="42" LRS="1e-4 3e-4 5e-4" PORTIONS="100" DEVICE="cuda:4" PRETRAINED="simclr" RUNS=1 \
+SIMCLR_BS="256" \
+SIMCLR_EP="500" \
+./exp/meta_scripts/train_parallel_simclr.sh
+
+AUGS="aug4" MAX_RUN=3 SEEDS="42" LRS="3e-5 5e-5 7e-5" PORTIONS="100" DEVICE="cuda:3" PRETRAINED="simclr" RUNS=1 \
+SIMCLR_BS="256" \
+SIMCLR_EP="500" \
+./exp/meta_scripts/train_parallel_simclr.sh
+
+```
+
+
 ### Training from SimCLR2
 Remeber to do SimCLR varying batch size and epoch for 100% data fine-tuning first!
 
-
+Remember to save in different model ckpt names!
 
 ### visualize
 ```bash

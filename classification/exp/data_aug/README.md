@@ -50,14 +50,40 @@ SEED=57 PORTIONS="10" DEVICE="cuda:1" ./exp/data_aug/scripts/train_flip.sh
 
 ## 以下是最後確定最好用的腳本(.sh)!
 ```bash
+cd ./classification
+
 AUGS="no_aug aug2_h aug2_v" MAX_RUN=3 SEEDS="24 38 57" LRS="7e-5 1e-4 3e-4 5e-4 7e-4" PORTIONS="60" DEVICE="cuda:7" ./exp/data_aug/scripts/train_flip_parallel.sh
 
 AUGS="no_aug aug2_h aug2_v aug3 aug4" MAX_RUN=3 SEEDS="10 24 38 42 57" LRS="5e-5 7e-5 1e-4 3e-4 5e-4" PORTIONS="10 20 30 40" DEVICE="cuda:7" ./exp/data_aug/scripts/train_flip_parallel.sh
 
 
-AUGS="no_aug aug2_h aug2_v aug3 aug4" MAX_RUN=3 SEEDS="10 24 38 42 57" LRS="3e-4 5e-4 7e-4 1e-3" PORTIONS="50 60 70" DEVICE="cuda:8" ./exp/data_aug/scripts/train_flip_parallel.sh
+AUGS="no_aug" MAX_RUN=3 SEEDS="10 24 38 42 57" LRS="3e-4 5e-4 7e-4" PORTIONS="70 80 90" DEVICE="cuda:8" ./exp/data_aug/scripts/train_flip_parallel.sh
 
 
+AUGS="aug2_h aug2_v" MAX_RUN=3 SEEDS="10 24 38 42 57" LRS="1e-4 3e-4" PORTIONS="70" DEVICE="cuda:8" ./exp/data_aug/scripts/train_flip_parallel.sh
+
+## 4/26 最後補充
+### portion 90, horizontal
+AUGS="aug2_h" MAX_RUN=3 SEEDS="10 24" LRS="1e-4" PORTIONS="90" DEVICE="cuda:0" ./exp/data_aug/scripts/train_flip_parallel.sh
+AUGS="aug2_h" MAX_RUN=3 SEEDS="38 57" LRS="3e-4" PORTIONS="90" DEVICE="cuda:1" ./exp/data_aug/scripts/train_flip_parallel.sh
+AUGS="aug2_h" MAX_RUN=3 SEEDS="42" LRS="7e-4" PORTIONS="90" DEVICE="cuda:2" ./exp/data_aug/scripts/train_flip_parallel.sh
+
+### portion 90, vertical
+AUGS="aug2_v" MAX_RUN=3 SEEDS="10 38 42" LRS="3e-4" PORTIONS="90" DEVICE="cuda:7" ./exp/data_aug/scripts/train_flip_parallel.sh
+AUGS="aug2_v" MAX_RUN=3 SEEDS="24 57" LRS="1e-4" PORTIONS="90" DEVICE="cuda:8" ./exp/data_aug/scripts/train_flip_parallel.sh
+
+### portion 90, 3X
+AUGS="aug3" MAX_RUN=3 SEEDS="10 57" LRS="7e-5" PORTIONS="90" DEVICE="cuda:0" ./exp/data_aug/scripts/train_flip_parallel.sh
+
+AUGS="aug3" MAX_RUN=3 SEEDS="24" LRS="1e-4" PORTIONS="90" DEVICE="cuda:4" ./exp/data_aug/scripts/train_flip_parallel.sh
+
+AUGS="aug3" MAX_RUN=3 SEEDS="38" LRS="5e-4" PORTIONS="90" DEVICE="cuda:5" ./exp/data_aug/scripts/train_flip_parallel.sh
+
+AUGS="aug3" MAX_RUN=3 SEEDS="42" LRS="5e-5" PORTIONS="90" DEVICE="cuda:6" ./exp/data_aug/scripts/train_flip_parallel.sh
+
+
+### portion 90, 4X
+AUGS="aug4" MAX_RUN=3 SEEDS="10 38" LRS="7e-5" PORTIONS="90" DEVICE="cuda:2" ./exp/data_aug/scripts/train_flip_parallel.sh
 
 ```
 

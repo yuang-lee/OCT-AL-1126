@@ -77,7 +77,7 @@ class SimCLR(object):
         save_config_file(self.writer.log_dir, self.args)
 
         # 建立資料夾
-        model_dir = "./SSL/simclr/model"
+        model_dir = "./SSL/simclr/ckpt"
         json_dir  = "./SSL/simclr/json"
         os.makedirs(model_dir, exist_ok=True)
         os.makedirs(json_dir,  exist_ok=True)

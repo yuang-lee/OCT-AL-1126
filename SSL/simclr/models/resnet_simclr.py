@@ -10,6 +10,7 @@ class ResNetSimCLR(nn.Module):
         super(ResNetSimCLR, self).__init__()
         
         if base_model == 'resnet18':
+            # To train from random init, we need to modify here!!
             model = models.resnet18(weights='IMAGENET1K_V1')
         elif base_model == 'resnet18_random':
             model = models.resnet18()
