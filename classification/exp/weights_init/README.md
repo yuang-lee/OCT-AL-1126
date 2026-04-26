@@ -159,7 +159,7 @@ PRETRAINED="simclr" \
 ./exp/weights_init/scripts/simclr_meta.sh
 
 
-SIMCLR_EPS="10 20 50 100 200 500" \
+SIMCLR_EPS="500 200 100 50 20 10" \
 SIMCLR_BSS="256" \
 AUGS="aug4" \
 MAX_RUN=3 \
@@ -171,8 +171,28 @@ DEVICE="cuda:5" \
 PRETRAINED="simclr" \
 ./exp/weights_init/scripts/simclr_meta.sh
 
+```
+
+4/26: 感覺起來batch sisz越大，epoch也需要越大才可以!
+快速打一些點看看:
+```bash
+# portion 2.5!
+SIMCLR_EPS="500" \
+SIMCLR_BSS="16" \
+AUGS="aug4" \
+MAX_RUN=3 \
+RUNS=3 \
+SEEDS="10 24 38 42 57" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="2.5" \
+DEVICE="cuda:4" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+## OK我知道了，其實應該確實是我們的simclr pretraining應該要隨著batch size改變LR!!
 
 ```
+
 
 
 Visualize
