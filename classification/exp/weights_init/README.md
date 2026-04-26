@@ -46,9 +46,12 @@ cd ./classification
 
 # 最好也來個ft 10%的? 之後可以做成兩個separate heatmaps?
 # 橫軸是epoch, 縱軸是bs
+./exp/weights_init/scripts/simclr_ft_10_5.sh # 5e-5
+./exp/weights_init/scripts/simclr_ft_10_2.sh # 7e-5 
+./exp/weights_init/scripts/simclr_ft_10_3.sh # 1e-4
 ./exp/weights_init/scripts/simclr_ft_10_1.sh # 3e-4
-./exp/weights_init/scripts/simclr_ft_10_2.sh # 5e-4
-./exp/weights_init/scripts/simclr_ft_10_3.sh # 7e-4
+./exp/weights_init/scripts/simclr_ft_10_4.sh # 5e-4
+./exp/weights_init/scripts/simclr_ft_10_6.sh # 7e-4
 
 
 ## bs=256 單獨RUN一下
@@ -62,8 +65,133 @@ SIMCLR_BS="256" \
 SIMCLR_EP="500" \
 ./exp/meta_scripts/train_parallel_simclr.sh
 
+
+
+## 最後最好用:
+
+### portions = 100
+SIMCLR_EPS="10 20 50" \
+SIMCLR_BSS="16 32 64" \
+AUGS="aug4" \
+MAX_RUN=5 \
+RUNS=3 \
+SEEDS="42" \
+LRS="5e-5" \
+PORTIONS="100" \
+DEVICE="cuda:0" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+SIMCLR_EPS="100 200 500" \
+SIMCLR_BSS="128 256" \
+AUGS="aug4" \
+MAX_RUN=5 \
+RUNS=3 \
+SEEDS="42" \
+LRS="5e-5" \
+PORTIONS="100" \
+DEVICE="cuda:1" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+SIMCLR_EPS="10 20 50" \
+SIMCLR_BSS="16 32 64" \
+AUGS="aug4" \
+MAX_RUN=5 \
+RUNS=3 \
+SEEDS="42" \
+LRS="1e-4" \
+PORTIONS="100" \
+DEVICE="cuda:2" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+SIMCLR_EPS="100 200 500" \
+SIMCLR_BSS="128 256" \
+AUGS="aug4" \
+MAX_RUN=5 \
+RUNS=3 \
+SEEDS="42" \
+LRS="1e-4" \
+PORTIONS="100" \
+DEVICE="cuda:3" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+
+### portions = 10
+
+SIMCLR_EPS="10 20 50 100 200 500" \
+SIMCLR_BSS="16 32 64 128 256" \
+AUGS="aug4" \
+MAX_RUN=3 \
+RUNS=3 \
+SEEDS="10 24" \
+LRS="1e-4 5e-4" \
+PORTIONS="10" \
+DEVICE="cuda:6" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+SIMCLR_EPS="10 20 50 100 200 500" \
+SIMCLR_BSS="16 32 64 128 256" \
+AUGS="aug4" \
+MAX_RUN=3 \
+RUNS=3 \
+SEEDS="38 42" \
+LRS="1e-4 5e-4" \
+PORTIONS="10" \
+DEVICE="cuda:7" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+
+SIMCLR_EPS="10 20 50 100 200 500" \
+SIMCLR_BSS="16 32 64 128 256" \
+AUGS="aug4" \
+MAX_RUN=3 \
+RUNS=3 \
+SEEDS="57" \
+LRS="1e-4 5e-4" \
+PORTIONS="10" \
+DEVICE="cuda:8" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+
+SIMCLR_EPS="10 20 50 100 200 500" \
+SIMCLR_BSS="256" \
+AUGS="aug4" \
+MAX_RUN=3 \
+RUNS=3 \
+SEEDS="10 24 38 42 57" \
+LRS="1e-4 5e-4" \
+PORTIONS="10" \
+DEVICE="cuda:5" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+
 ```
 
+
+Visualize
+```bash
+python3 plot_simclr_heatmap.py \
+  --portion 10 \
+  --simclr_lr 0.0002 \
+  --epochs 10 20 50 100 200 500 \
+  --batch_sizes 16 32 64 128 256 \
+  --save_dir ./
+
+python3 plot_simclr_heatmap.py \
+  --portion 100 \
+  --simclr_lr 0.0002 \
+  --epochs 10 20 50 100 200 500 \
+  --batch_sizes 16 32 64 128 256 \
+  --save_dir ./
+
+```
 
 ### Training from SimCLR2
 Remeber to do SimCLR varying batch size and epoch for 100% data fine-tuning first!
