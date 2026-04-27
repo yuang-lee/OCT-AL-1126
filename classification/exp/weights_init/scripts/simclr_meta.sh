@@ -11,6 +11,9 @@ SIMCLR_EPS=(${SIMCLR_EPS:-500 100 200 10 20 50})
 # 要掃的 SimCLR pretraining batch sizes
 SIMCLR_BSS=(${SIMCLR_BSS:-256 128 16 32 64})
 
+# SimCLR pretraining learning rate
+SIMCLR_LR=${SIMCLR_LR:-"0.0002"}
+
 # Downstream classifier settings
 AUGS=${AUGS:-"aug4"}
 MAX_RUN=${MAX_RUN:-3}
@@ -33,6 +36,7 @@ echo "Wrapper configuration"
 echo "============================================================"
 echo "SIMCLR_EPS : ${SIMCLR_EPS[*]}"
 echo "SIMCLR_BSS : ${SIMCLR_BSS[*]}"
+echo "SIMCLR_LR  : ${SIMCLR_LR}"
 echo "AUGS       : ${AUGS}"
 echo "MAX_RUN    : ${MAX_RUN}"
 echo "RUNS       : ${RUNS}"
@@ -55,6 +59,7 @@ for simclr_bs in "${SIMCLR_BSS[@]}"; do
         echo "Running SimCLR grid:"
         echo "  SIMCLR_BS = ${simclr_bs}"
         echo "  SIMCLR_EP = ${simclr_ep}"
+        echo "  SIMCLR_LR = ${SIMCLR_LR}"
         echo "============================================================"
 
         AUGS="${AUGS}" \
@@ -67,9 +72,10 @@ for simclr_bs in "${SIMCLR_BSS[@]}"; do
         PRETRAINED="${PRETRAINED}" \
         SIMCLR_BS="${simclr_bs}" \
         SIMCLR_EP="${simclr_ep}" \
+        SIMCLR_LR="${SIMCLR_LR}" \
         bash "${SCRIPT}"
 
-        echo "Finished SIMCLR_BS=${simclr_bs}, SIMCLR_EP=${simclr_ep}"
+        echo "Finished SIMCLR_BS=${simclr_bs}, SIMCLR_EP=${simclr_ep}, SIMCLR_LR=${SIMCLR_LR}"
     done
 done
 

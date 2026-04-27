@@ -179,24 +179,189 @@ PRETRAINED="simclr" \
 # portion 2.5!
 SIMCLR_EPS="500" \
 SIMCLR_BSS="16" \
+SIMCLR_LR="0.0002" \
 AUGS="aug4" \
 MAX_RUN=3 \
 RUNS=3 \
 SEEDS="10 24 38 42 57" \
 LRS="5e-5 1e-4 5e-4" \
 PORTIONS="2.5" \
-DEVICE="cuda:4" \
+DEVICE="cuda:8" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+```
+OK我知道了，其實應該確實是我們的simclr pretraining應該要隨著batch size改變LR!! 這也是當初SimCLR作者所做的! (他們用linear scaling或 sqrt scaling)
+補train SimCLR!
+```bash
+cd ../
+./classification/exp/weights_init/scripts/train_simclr_w_lr.sh --DEVICE 'cuda:4' \
+--ANCHOR_BS 64 --ANCHOR_LR 0.0002
+
+
+# 直接找BS=256時候的最佳lr 
+## 先看EP=10的
+
+# python3 ./SSL/simclr/run.py --epochs 10 -b 256 --device cuda:4 --lr 0.0002 # what we done originally
+
+python3 ./SSL/simclr/run.py --epochs 10 -b 256 --device cuda:4 --lr 0.0004
+
+python3 ./SSL/simclr/run.py --epochs 10 -b 256 --device cuda:0 --lr 0.0008 # this one is certainly too large already
+
+python3 ./SSL/simclr/run.py --epochs 10 -b 256 --device cuda:4 --lr 0.0016 # let's skip this one
+
+## 可以跳去看EP=100的看是不是差不多!
+python3 ./SSL/simclr/run.py --epochs 100 -b 256 --device cuda:7 --lr 0.0001
+
+# python3 ./SSL/simclr/run.py --epochs 100 -b 256 --device cuda:2 --lr 0.0002 # what we done originally
+
+python3 ./SSL/simclr/run.py --epochs 100 -b 256 --device cuda:2 --lr 0.0004
+
+python3 ./SSL/simclr/run.py --epochs 100 -b 256 --device cuda:8 --lr 0.0008
+
+## 再跳去看EP=500的看是不是也差不多!
+python3 ./SSL/simclr/run.py --epochs 500 -b 256 --device cuda:1 --lr 0.0004 # 正在跑了
+
+## 確認downstream perf有比較高
+SIMCLR_EPS="10 100" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0002" \
+AUGS="aug4" \
+MAX_RUN=3 \
+RUNS=3 \
+SEEDS="10 24" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="2.5" \
+DEVICE="cuda:5" \
 PRETRAINED="simclr" \
 ./exp/weights_init/scripts/simclr_meta.sh
 
-## OK我知道了，其實應該確實是我們的simclr pretraining應該要隨著batch size改變LR!!
 
+SIMCLR_EPS="10 100" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0004" \
+AUGS="aug4" \
+MAX_RUN=3 \
+RUNS=3 \
+SEEDS="10 24" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="2.5" \
+DEVICE="cuda:6" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+
+
+SIMCLR_EPS="10 100" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0002" \
+AUGS="aug4" \
+MAX_RUN=3 \
+RUNS=3 \
+SEEDS="38 42 57" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="2.5" \
+DEVICE="cuda:0" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+
+SIMCLR_EPS="10 100" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0004" \
+AUGS="aug4" \
+MAX_RUN=5 \
+RUNS=3 \
+SEEDS="38 42 57" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="2.5" \
+DEVICE="cuda:2" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+SIMCLR_EPS="100" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0004" \
+AUGS="aug4" \
+MAX_RUN=5 \
+RUNS=3 \
+SEEDS="57" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="10" \
+DEVICE="cuda:2" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+# 接著看BS=16時候的最佳lr，比較接近Linear 或 sqrt sclaing?
+python3 ./SSL/simclr/run.py --epochs 10 -b 16 --device cuda:5 --lr 0.000025 # Linear scaling LR --> 這個很差
+
+python3 ./SSL/simclr/run.py --epochs 10 -b 16 --device cuda:6 --lr 0.0001 # sqrt scaling LR --> 這個差不多，其實稍微差一點...
+
+python3 ./SSL/simclr/run.py --epochs 100 -b 16 --device cuda:5 --lr 0.000025 # 確實也還是比較差
+
+python3 ./SSL/simclr/run.py --epochs 100 -b 16 --device cuda:6 --lr 0.0001 # 有比2e-4還好了? 幾乎差一點....所以我知道了! scaling down LR for bs小的，沒特別幫助，但是scaling up LR for bs大的有其必要!
 ```
 
-
-
-Visualize
+重新train SimCLR model (已經有的不重新訓練)
+SIMCLR_BS_TO_LR = {
+    16: "0.0001",
+    32: "0.00015",   # sqrt scaling value was approximately 0.0001414
+    64: "0.0002",
+    128: "0.0003",   # sqrt scaling value was approximately 0.0002828
+    256: "0.0004",
+}
 ```bash
+cd ../ # i.e., root dir of this project
+## 以下還沒下喔!
+./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs16.sh # 下了
+./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs32.sh
+./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs64.sh # 下了
+./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs128.sh
+./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs256.sh
+```
+
+重新Finetune
+
+```bash
+# portion =2.5
+
+SIMCLR_EPS="10" \
+SIMCLR_BSS="16" \
+SIMCLR_LR="0.0001" \
+AUGS="aug4" \
+MAX_RUN=5 \
+RUNS=3 \
+SEEDS="10 24 38 42 57" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="10" \
+DEVICE="cuda:0" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+SIMCLR_EPS="100" \
+SIMCLR_BSS="16" \
+SIMCLR_LR="0.0001" \
+AUGS="aug4" \
+MAX_RUN=5 \
+RUNS=3 \
+SEEDS="10 24 38 42 57" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="10" \
+DEVICE="cuda:2" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+```
+
+Visualize with fixed LR
+```bash
+
+
+python3 plot_simclr_heatmap.py \
+  --portion 2.5 \
+  --simclr_lr 0.0002 \
+  --epochs 10 20 50 100 200 500 \
+  --batch_sizes 16 32 64 128 256 \
+  --save_dir ./
+
 python3 plot_simclr_heatmap.py \
   --portion 10 \
   --simclr_lr 0.0002 \
@@ -210,8 +375,17 @@ python3 plot_simclr_heatmap.py \
   --epochs 10 20 50 100 200 500 \
   --batch_sizes 16 32 64 128 256 \
   --save_dir ./
-
 ```
+
+Visualize with dynamic LR for different batch size
+```bash
+python3 plot_simclr_heatmap_lr.py \
+    --portion 2.5 \
+    --epochs 10 20 50 100 200 500 \
+    --batch_sizes 16 32 64 128 256
+```
+
+
 
 ### Training from SimCLR2
 Remeber to do SimCLR varying batch size and epoch for 100% data fine-tuning first!
