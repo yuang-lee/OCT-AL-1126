@@ -33,6 +33,12 @@ def parse_arguments():
     parser.add_argument('--simclr_bs', type=str, default='256')
     parser.add_argument('--simclr_ep', type=str, default='500')
     parser.add_argument('--simclr_base_dir', type=str, default='../SSL/simclr/ckpt')
+    parser.add_argument('--simclr_init', type=str, choices=['imagenet', 'random'], default='imagenet',
+                        help="Which init the SimCLR backbone was pretrained from. "
+                             "'imagenet' -> resnet18_simclr_*.pkl (theta^2_SimCLR); "
+                             "'random' -> resnet18_random_simclr_*.pkl (theta^1_SimCLR). "
+                             "Random-init results are saved to a separate cold_start_simclr_randinit/ dir "
+                             "so they do not overwrite the imagenet-init (theta^2) results.")
     parser.add_argument('--ask_saving', action='store_true', default=False)
     parser.add_argument('--no_data_aug', dest='data_aug', action='store_false', default=True)
     parser.add_argument('--aug_factor', type=int, default=4)   
@@ -53,19 +59,32 @@ def initialize_model(num_classes, pretrained):
     return model
 
 
-def build_simclr_path(simclr_lr, simclr_bs, simclr_ep, simclr_base_dir):
-    simclr_ckpt_name = f"resnet18_simclr_lr{simclr_lr}_bs{simclr_bs}_ep{simclr_ep}.pkl"
+def cold_start_subdir(pretrained_weights, simclr_init='imagenet'):
+    """Result sub-directory. Random-init SimCLR (theta^1) goes to a separate dir
+    so it never overwrites imagenet-init SimCLR (theta^2) results."""
+    sub = f"cold_start_{pretrained_weights}"
+    if pretrained_weights == 'simclr' and simclr_init == 'random':
+        sub += "_randinit"
+    return sub
+
+
+def build_simclr_path(simclr_lr, simclr_bs, simclr_ep, simclr_base_dir, simclr_init='imagenet'):
+    # run.py saves checkpoints as "{arch}_simclr_...": arch=resnet18 for imagenet init,
+    # arch=resnet18_random for random init. Mirror that naming here.
+    prefix = 'resnet18_simclr' if simclr_init == 'imagenet' else 'resnet18_random_simclr'
+    simclr_ckpt_name = f"{prefix}_lr{simclr_lr}_bs{simclr_bs}_ep{simclr_ep}.pkl"
     return os.path.join(simclr_base_dir, simclr_ckpt_name)
 
 
-def initialize_simclr_model(num_classes, simclr_lr, simclr_bs, simclr_ep, simclr_base_dir):
-    simclr_path = build_simclr_path(simclr_lr, simclr_bs, simclr_ep, simclr_base_dir)
+def initialize_simclr_model(num_classes, simclr_lr, simclr_bs, simclr_ep, simclr_base_dir,
+                            simclr_init='imagenet'):
+    simclr_path = build_simclr_path(simclr_lr, simclr_bs, simclr_ep, simclr_base_dir, simclr_init)
 
     if not os.path.isfile(simclr_path):
         raise FileNotFoundError(
             f"SimCLR checkpoint not found: {simclr_path}\n"
-            f"Expected naming pattern: "
-            f"{os.path.join(simclr_base_dir, 'resnet18_simclr_lr{simclr_lr}_bs{simclr_bs}_ep{simclr_ep}')}"
+            f"(simclr_init={simclr_init}; expected '{os.path.basename(simclr_path)}' "
+            f"under {simclr_base_dir})"
         )
 
     model = ResNetSimCLR('resnet18', 32)
@@ -188,7 +207,8 @@ def main():
     portion_key = str(float(args.portion))
     lr_key = str(args.lr)
     
-    save_path = os.path.join(args.exp_path, f"classification_{args.task_type}", f"cold_start_{args.pretrained_weights}")
+    save_path = os.path.join(args.exp_path, f"classification_{args.task_type}",
+                             cold_start_subdir(args.pretrained_weights, args.simclr_init))
     file_path = os.path.join(save_path, file_name)
     print(f"\nChecking existing results...")
     check_existing_results(file_path, aug_key, portion_key, lr_key, max_runs=3)
@@ -244,7 +264,9 @@ def main():
             args.simclr_bs,
             args.simclr_ep,
             args.simclr_base_dir,
+            args.simclr_init,
         )
+        print(f'SimCLR init      : {args.simclr_init}')
         print(f'SimCLR LR        : {args.simclr_lr}')
         print(f'SimCLR batch     : {args.simclr_bs}')
         print(f'SimCLR epoch     : {args.simclr_ep}')
@@ -273,10 +295,24 @@ def main():
         total_iters=args.epoch
     )
     
+    # 依 aug_factor 描述實際翻轉（flip_type 只在 aug2 有意義；aug3/aug4 固定含 HF+VF）
+    if not args.data_aug:
+        aug_desc = "no_aug (1x)"
+    elif args.aug_factor == 2:
+        aug_desc = f"{aug_key} (2x: orig + {args.flip_type} flip)"
+    elif args.aug_factor == 3:
+        aug_desc = f"{aug_key} (3x: orig + HF + VF)"
+    else:
+        aug_desc = f"{aug_key} (4x: orig + HF + VF + HFV)"
+
     # Train model
+    print('=' * 50)
     print(f'===== Train Model with {args.portion}% data =====')
-    print('-' * 50)
+    print(f'{"Pretrained Init":<20}: {args.pretrained_weights}')
+    print(f'{"Random Seed":<20}: {args.seed}')
+    print(f'{"Data Aug":<20}: {aug_desc}')
     print(f'{"Batch Size":<20}: {args.batch_size}')
+    print(f'{"Epoch":<20}: {args.epoch}')
     print(f'{"Learning Rate":<20}: {args.lr}')
     print(f'{"Weight Decay":<20}: {args.weight_decay if args.weight_decay else "None"}')
     print(f'{"Color Jitter":<20}: {args.color_jitter}')
@@ -288,10 +324,10 @@ def main():
 
     total_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'{"Trainable Params":<20}: {total_trainable_params / 1e6:.2f}M')
-    print('-' * 50)
+    print('=' * 50)
 
-    _, final_acc = train_model(
-        model, args.device, data_loaders, dataset_sizes, 
+    _, final_acc, _ = train_model(
+        model, args.device, data_loaders, dataset_sizes,
         criterion, optimizer_, lr_scheduler_, num_epochs=args.epoch
     )
     
@@ -318,7 +354,8 @@ def main():
             print('Model checkpoint not saved.')
     
     # Save results
-    save_path = os.path.join(args.exp_path, f"classification_{args.task_type}", f"cold_start_{args.pretrained_weights}")
+    save_path = os.path.join(args.exp_path, f"classification_{args.task_type}",
+                             cold_start_subdir(args.pretrained_weights, args.simclr_init))
     os.makedirs(save_path, exist_ok=True)
     file_path = os.path.join(save_path, file_name)
     

@@ -259,8 +259,8 @@ def main():
     print(f'{"Trainable Params":<20}: {total_trainable_params / 1e6:.2f}M')
     print('-' * 50)
 
-    _, final_acc = train_model(
-        model, args.device, data_loaders, dataset_sizes, 
+    _, final_acc, _ = train_model(
+        model, args.device, data_loaders, dataset_sizes,
         criterion, optimizer_, lr_scheduler_, num_epochs=args.epoch
     )
     

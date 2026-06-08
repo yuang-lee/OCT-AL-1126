@@ -112,4 +112,5 @@ def train_model(model, device, data_loaders, dataset_sizes, criterion, optimizer
     )
     print('Test Loss: {:.4f} Acc: {:.4f}'.format(test_loss, test_acc))
 
-    return model, test_acc
+    # 第三個回傳值 best_val_loss：供 AL 以 val（非 test）挑最佳 lr，避免 test leakage
+    return model, test_acc, best_val_loss
