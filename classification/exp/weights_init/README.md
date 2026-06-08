@@ -316,40 +316,142 @@ cd ../ # i.e., root dir of this project
 ./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs32.sh
 ./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs64.sh # 下了
 ./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs128.sh
-./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs256.sh
+./classification/exp/weights_init/scripts/train_simclr_custom_lr_bs256.sh # 下了
 ```
 
 重新Finetune
 
 ```bash
 # portion =2.5
-
-SIMCLR_EPS="10" \
+## simclr bs=16
+# SIMCLR_EPS="10 20 50 100 200 500" \
+SIMCLR_EPS="200" \
 SIMCLR_BSS="16" \
 SIMCLR_LR="0.0001" \
+AUGS="aug4" \
+MAX_RUN=ˇ \
+RUNS=3 \
+SEEDS="10 24 38 42 57" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="2.5" \
+DEVICE="cuda:˙" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+
+## simclr bs=64
+SIMCLR_EPS="10 20 50 100 200 500" \
+SIMCLR_BSS="64" \
+SIMCLR_LR="0.0002" \
+AUGS="aug4" \
+MAX_RUN=6 \
+RUNS=3 \
+SEEDS="10 24 38 42 57" \
+LRS="5e-5 1e-4 5e-4" \
+PORTIONS="2.5" \
+DEVICE="cuda:1" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+## simclr bs=256
+SIMCLR_EPS="20 50 200 500" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0004" \
 AUGS="aug4" \
 MAX_RUN=5 \
 RUNS=3 \
 SEEDS="10 24 38 42 57" \
 LRS="5e-5 1e-4 5e-4" \
-PORTIONS="10" \
+PORTIONS="2.5" \
+DEVICE="cuda:2" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+
+# portion =100
+
+
+SIMCLR_EPS="500 200 100 50 20 10" \
+SIMCLR_BSS="16" \
+SIMCLR_LR="0.0001" \
+AUGS="aug4" \
+MAX_RUN=6 \
+RUNS=3 \
+SEEDS="42" \
+LRS="5e-5 1e-4" \
+PORTIONS="100" \
+DEVICE="cuda:1" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+
+SIMCLR_EPS="500 200 100" \
+SIMCLR_BSS="64" \
+SIMCLR_LR="0.0002" \
+AUGS="aug4" \
+MAX_RUN=3 \
+RUNS=3 \
+SEEDS="42" \
+LRS="5e-5 1e-4" \
+PORTIONS="100" \
+DEVICE="cuda:5" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+SIMCLR_EPS="500 200 100 50 20" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0004" \
+AUGS="aug4" \
+MAX_RUN=6 \
+RUNS=3 \
+SEEDS="42" \
+LRS="5e-5 1e-4" \
+PORTIONS="100" \
+DEVICE="cuda:2" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+SIMCLR_EPS="500 200 100 50 20" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0004" \
+AUGS="aug4" \
+MAX_RUN=6 \
+RUNS=3 \
+SEEDS="42" \
+LRS="5e-5 1e-4" \
+PORTIONS="100" \
+DEVICE="cuda:2" \
+PRETRAINED="simclr" \
+./exp/weights_init/scripts/simclr_meta.sh
+
+SIMCLR_EPS="500" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0004" \
+AUGS="aug4" \
+MAX_RUN=6 \
+RUNS=3 \
+SEEDS="42" \
+LRS="3e-5" \
+PORTIONS="100" \
 DEVICE="cuda:0" \
 PRETRAINED="simclr" \
 ./exp/weights_init/scripts/simclr_meta.sh
 
-SIMCLR_EPS="100" \
-SIMCLR_BSS="16" \
-SIMCLR_LR="0.0001" \
+SIMCLR_EPS="500" \
+SIMCLR_BSS="256" \
+SIMCLR_LR="0.0004" \
 AUGS="aug4" \
-MAX_RUN=5 \
+MAX_RUN=6 \
 RUNS=3 \
-SEEDS="10 24 38 42 57" \
-LRS="5e-5 1e-4 5e-4" \
-PORTIONS="10" \
+SEEDS="42" \
+LRS="1e-5" \
+PORTIONS="100" \
 DEVICE="cuda:2" \
 PRETRAINED="simclr" \
 ./exp/weights_init/scripts/simclr_meta.sh
 ```
+
+
 
 Visualize with fixed LR
 ```bash
@@ -381,6 +483,11 @@ Visualize with dynamic LR for different batch size
 ```bash
 python3 plot_simclr_heatmap_lr.py \
     --portion 2.5 \
+    --epochs 10 20 50 100 200 500 \
+    --batch_sizes 16 32 64 128 256
+
+python3 plot_simclr_heatmap_lr.py \
+    --portion 100 \
     --epochs 10 20 50 100 200 500 \
     --batch_sizes 16 32 64 128 256
 ```
