@@ -78,7 +78,10 @@ def badge(model, data_dir, unlabel_data_idx, num_data_to_label, device, batch_si
                                 num_workers=4, pin_memory=True)
 
     model.eval().to(device)
-    feature_extractor = nn.Sequential(*list(model.children())[:-1]).eval().to(device)
+    # ResNetSimCLR 的 children 只有 .backbone → 要進 backbone 拿 512 維 penultimate 特徵，
+    # 否則 Sequential(children[:-1]) 變 identity → 用原始影像當梯度嵌入的 feature（錯且爆記憶體）。
+    net = model.backbone if hasattr(model, "backbone") else model
+    feature_extractor = nn.Sequential(*list(net.children())[:-1]).eval().to(device)
     for p in feature_extractor.parameters():
         p.requires_grad = False
 

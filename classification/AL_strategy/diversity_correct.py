@@ -45,7 +45,10 @@ def coreset(model, data_dir, unlabel_data_idx, num_data_to_label, device, labele
         to_label_data_idx: 選中的未標註索引（長度 num_data_to_label）。
     """
     labeled_idx = labeled_idx or []
-    feature_extractor = torch.nn.Sequential(*list(model.children())[:-1]).eval().to(device)
+    # ResNetSimCLR 的 children 只有 .backbone（resnet18，fc 已換成分類頭）；要進 backbone 拿
+    # penultimate 512 維特徵，否則 Sequential(children[:-1]) 變 identity → 吐原始影像(1.8M維) → OOM。
+    net = model.backbone if hasattr(model, "backbone") else model
+    feature_extractor = torch.nn.Sequential(*list(net.children())[:-1]).eval().to(device)
     full_dataset = datasets.ImageFolder(f"{data_dir}/train", transform=_TF)
 
     emb_u = _extract_features(feature_extractor, full_dataset, unlabel_data_idx, device,
@@ -56,12 +59,11 @@ def coreset(model, data_dir, unlabel_data_idx, num_data_to_label, device, labele
     if labeled_idx:
         emb_l = _extract_features(feature_extractor, full_dataset, labeled_idx, device,
                                   "Coreset: labeled feats")        # [Nl, D]
-        min_distances = np.full(Nu, np.inf, dtype=np.float64)
-        # 分塊算 unlabeled→labeled 的最近距離，省記憶體
-        for s in range(0, len(labeled_idx), 256):
-            blk = emb_l[s:s + 256]
-            d = np.linalg.norm(emb_u[:, None, :] - blk[None, :, :], axis=2)  # [Nu, blk]
-            min_distances = np.minimum(min_distances, d.min(axis=1))
+        # ||u-l||² = ||u||² + ||l||² - 2 u·l；用 matmul 得 [Nu,Nl]（小），免 3D broadcast 爆記憶體
+        uu = np.sum(emb_u ** 2, axis=1)                            # [Nu]
+        ll = np.sum(emb_l ** 2, axis=1)                            # [Nl]
+        d2 = uu[:, None] + ll[None, :] - 2.0 * (emb_u @ emb_l.T)   # [Nu, Nl]
+        min_distances = np.sqrt(np.maximum(d2.min(axis=1), 0.0)).astype(np.float64)
     else:
         # 沒有已標註集（理論上 AL 首輪是 random，不會走到這）→ 隨機第一個點
         min_distances = np.full(Nu, np.inf, dtype=np.float64)

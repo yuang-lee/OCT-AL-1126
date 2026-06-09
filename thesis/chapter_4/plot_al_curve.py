@@ -57,20 +57,25 @@ def pool_strategy(strat, aug):
     return best_lr_per_portion(pooled)
 
 
-# Random baseline 只畫有跑完整的 portion（15/25/35/45/55 未跑完整，跳過）
-RANDOM_PORTIONS = {5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0}
+# Random baseline 只畫有跑完整的 portion（含 2.5；15/25/35/45/55 未跑完整，跳過）
+RANDOM_PORTIONS = {2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0}
 
 
 def random_baseline(aug):
-    """Random(passive) baseline = θ² cold-start（隨機選子集）曲線，只取 RANDOM_PORTIONS。"""
-    f = os.path.join(EXP, "cold_start_simclr", "random42_bs16.json")
-    if not os.path.isfile(f):
-        return {}
-    d = json.load(open(f))
-    if aug not in d:
-        return {}
-    st = best_lr_per_portion(d[aug])
-    return {p: v for p, v in st.items() if p in RANDOM_PORTIONS}
+    """Random(passive) baseline = θ² cold-start（隨機選子集）。
+    2.5/10/100 等多 seed 點用 per-cfg pool；其餘（5,20,...,60）用 seed42 彙整檔。"""
+    cs = os.path.join(EXP, "cold_start_simclr")
+    out = {}
+    # 來源1：seed42 彙整檔（有 5,15,20,...,70，但無 2.5）
+    f = os.path.join(cs, "random42_bs16.json")
+    if os.path.isfile(f):
+        d = json.load(open(f))
+        if aug in d:
+            out.update({p: v for p, v in best_lr_per_portion(d[aug]).items() if p in RANDOM_PORTIONS})
+    # 來源2：best-cfg 多 seed（含 2.5）→ 優先覆蓋
+    st2 = pool_seed_files(cs, lambda fn: "simclr_lr0.0002_simclr_bs256_simclr_ep500" in fn, aug)
+    out.update({p: v for p, v in st2.items() if p in RANDOM_PORTIONS})
+    return out
 
 
 def style_ax(ax):

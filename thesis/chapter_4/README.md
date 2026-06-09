@@ -113,10 +113,21 @@ python3 thesis/chapter_4/plot_portion_curve.py           # 紫線（θ²）用�
 
 ```bash
 # 跑單一策略 × 5 seeds（例：entropy）。可拆 seed 分卡加速（wrapper 內是序列跑）
-DEVICE=cuda:9 STRATEGIES="entropy" SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh
-#   分兩卡：
-DEVICE=cuda:1 STRATEGIES="entropy" SEEDS="10 24"    ./thesis/chapter_4/run_4_4_active_learning.sh
-DEVICE=cuda:3 STRATEGIES="entropy" SEEDS="38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh
+# DEVICE=cuda:9 STRATEGIES="entropy" SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
+
+## 改一下LR search range
+
+DEVICE=cuda:9 STRATEGIES="entropy" SEEDS="24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
+
+DEVICE=cuda:4 STRATEGIES="margin" SEEDS="10 24" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
+DEVICE=cuda:4 STRATEGIES="margin" SEEDS="38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
+
+DEVICE=cuda:3 STRATEGIES="conf" SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
+
+DEVICE=cuda:5 STRATEGIES="coreset" SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
+
+DEVICE=cuda:3 STRATEGIES="badge" SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
+
 
 # 全部 6 策略 × 5 seeds（random+conf+entropy+margin+coreset+badge）
 DEVICE=cuda:1 ./thesis/chapter_4/run_4_4_active_learning.sh

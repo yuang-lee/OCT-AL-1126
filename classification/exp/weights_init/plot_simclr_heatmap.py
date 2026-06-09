@@ -405,6 +405,12 @@ def build_heatmap_matrix(
         dtype=float,
     )
 
+    std_matrix = np.full(
+        shape=(len(batch_sizes), len(epochs)),
+        fill_value=np.nan,
+        dtype=float,
+    )
+
     cell_details = {
         (bs, ep): []
         for bs in batch_sizes
@@ -418,6 +424,7 @@ def build_heatmap_matrix(
     for i, bs in enumerate(batch_sizes):
         for j, ep in enumerate(epochs):
             per_seed_means = []
+            cell_all_vals = []   # 該 cell 所有 seed × run 的個別準確率（給 std 誤差棒用）
 
             # Sort by seed order provided by args.seeds
             seed_to_record = {}
@@ -462,6 +469,7 @@ def build_heatmap_matrix(
                     continue
 
                 per_seed_means.append(mean_acc)
+                cell_all_vals.extend(list(vals))
 
                 cell_details[(bs, ep)].append(
                     {
@@ -476,6 +484,11 @@ def build_heatmap_matrix(
 
             if per_seed_means:
                 matrix[i, j] = float(np.mean(per_seed_means)) * 100.0
+                # std：該 cell 跨 seed×run 的個別準確率標準差（單一值→0）
+                if len(cell_all_vals) >= 2:
+                    std_matrix[i, j] = float(np.std(cell_all_vals, ddof=1)) * 100.0
+                else:
+                    std_matrix[i, j] = 0.0
 
     # -------------------------------------------------------------------------
     # Print cell details
@@ -535,7 +548,7 @@ def build_heatmap_matrix(
 
     print("-" * 150)
 
-    return matrix, batch_sizes, epochs
+    return matrix, std_matrix, batch_sizes, epochs
 
 # =============================================================================
 # Plot heatmap
@@ -626,6 +639,103 @@ def plot_heatmap(
 
     fig.savefig(save_path, dpi=150)
     print(f"\nHeatmap saved to: {save_path}")
+
+
+# =============================================================================
+# Plot grouped bar chart (same data as heatmap)
+# =============================================================================
+
+def plot_grouped_bar(
+    matrix,
+    std_matrix,
+    batch_sizes,
+    epochs,
+    save_path,
+    annotate=True,
+    ymin=None,
+    ymax=None,
+):
+    """
+    Grouped bar chart of the SAME matrix as the heatmap（碩論樣式）。
+
+    x-axis groups = SimCLR pretraining batch size.
+    Within each batch-size group, one bar per SimCLR pretraining epoch (legend).
+    黑色誤差棒 = std（跨 seed×run）。y 軸自動 zoom，小差異才看得出來。
+
+    matrix[i, j] / std_matrix[i, j] = (batch_sizes[i], epochs[j])；NaN cell 跳過。
+    """
+    import matplotlib.cm as cm
+
+    # 碩論風格：sans-serif、大字級、粗框（與 al_curve / portion_curve 對齊）
+    FONT_LABEL, FONT_TICK, FONT_LEGEND = 24, 18, 15
+    plt.rcParams.update({
+        "font.size": 16, "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "DejaVu Sans"], "axes.linewidth": 1.5,
+    })
+
+    n_bs = len(batch_sizes)
+    n_ep = len(epochs)
+    x = np.arange(n_bs)                 # 一群 = 一個 batch size
+    total_width = 0.84
+    bar_w = total_width / max(n_ep, 1)
+    colors = cm.viridis(np.linspace(0.12, 0.9, n_ep))   # 顏色 = epoch
+
+    fig, ax = plt.subplots(figsize=(max(9.5, n_bs * 2.0), 6.5))
+
+    for j, ep in enumerate(epochs):
+        offsets = x - total_width / 2.0 + bar_w * (j + 0.5)
+        vals = matrix[:, j]            # 此 epoch 在各 batch size 的值
+        errs = std_matrix[:, j]
+        ax.bar(
+            offsets,
+            np.where(np.isfinite(vals), vals, 0.0),
+            width=bar_w * 0.92,
+            color=colors[j],
+            edgecolor="black",
+            linewidth=0.7,
+            label=f"{ep}",
+            yerr=np.where(np.isfinite(vals), np.nan_to_num(errs), 0.0),
+            error_kw=dict(ecolor="black", elinewidth=1.3, capsize=2.5, capthick=1.3),
+        )
+
+    ax.set_xlabel("SimCLR Pretraining Batch Size", fontsize=FONT_LABEL, labelpad=10)
+    ax.set_ylabel("Accuracy (%)", fontsize=FONT_LABEL, labelpad=10)
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(b) for b in batch_sizes])
+    ax.tick_params(axis="both", labelsize=FONT_TICK, width=1.5, length=6)
+
+    # y 軸 zoom（含誤差棒範圍）
+    finite = matrix[np.isfinite(matrix)]
+    if finite.size > 0:
+        err_max = np.nanmax(np.where(np.isfinite(std_matrix), std_matrix, 0.0))
+        lo = ymin if ymin is not None else float(np.floor(finite.min()) - 1.0)
+        hi = ymax if ymax is not None else float(np.ceil(finite.max() + err_max) + 0.8)
+        ax.set_ylim(lo, hi)
+
+    ax.grid(axis="y", linestyle="--", alpha=0.4, linewidth=1.0)
+    ax.set_axisbelow(True)
+    for s in ax.spines.values():
+        s.set_linewidth(1.5)
+
+    # matplotlib 預設直向填 → 重排 handles 成轉置順序，讓視覺上是「橫向」：
+    #   10 20 50 / 100 200 500
+    handles, labels = ax.get_legend_handles_labels()
+    ncol = 3
+    nrow = int(np.ceil(len(handles) / ncol))
+    order = [r * ncol + c for c in range(ncol) for r in range(nrow) if r * ncol + c < len(handles)]
+    handles = [handles[i] for i in order]
+    labels = [labels[i] for i in order]
+    leg = ax.legend(
+        handles, labels,
+        title="Pretraining Epoch",
+        fontsize=FONT_LEGEND, title_fontsize=FONT_LEGEND,
+        ncol=ncol, columnspacing=1.0, loc="upper left", framealpha=0.9, edgecolor="0.7",
+    )
+    leg._legend_box.align = "left"
+
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=300, bbox_inches="tight", facecolor="white")
+    print(f"\nGrouped bar chart saved to: {save_path}")
 
 
 # =============================================================================
@@ -745,6 +855,28 @@ def main():
         help="Disable cell annotations.",
     )
 
+    parser.add_argument(
+        "--bar",
+        action="store_true",
+        default=False,
+        help="Draw a grouped bar chart (group by epoch, sub-bars by batch size) "
+             "instead of the heatmap, using the same data.",
+    )
+
+    parser.add_argument(
+        "--ymin",
+        type=float,
+        default=90.0,
+        help="Bar chart only: y-axis minimum (default 90).",
+    )
+
+    parser.add_argument(
+        "--ymax",
+        type=float,
+        default=98.0,
+        help="Bar chart only: y-axis maximum (default 98).",
+    )
+
     args = parser.parse_args()
 
     os.makedirs(args.save_dir, exist_ok=True)
@@ -758,15 +890,15 @@ def main():
     # else:
     #     lr_tag = "lr" + str(args.only_lr).replace(".", "p").replace("-", "m")
 
+    kind_prefix = args.save_prefix.replace("heatmap", "bargroup") if args.bar else args.save_prefix
     save_path = os.path.join(
         args.save_dir,
-        # f"{args.save_prefix}_{aug_tag}_portion{portion_tag}_simclrlr{simclr_lr_tag}_{lr_tag}.png",
-            f"{args.save_prefix}_{aug_tag}_portion{portion_tag}_simclrlr{simclr_lr_tag}.png",
+        f"{kind_prefix}_{aug_tag}_portion{portion_tag}_simclrlr{simclr_lr_tag}.png",
     )
 
     records = scan_simclr_jsons(args.base_dir)
 
-    matrix, batch_sizes, epochs = build_heatmap_matrix(
+    matrix, std_matrix, batch_sizes, epochs = build_heatmap_matrix(
         records=records,
         seeds=args.seeds,
         suffix=args.suffix,
@@ -778,16 +910,28 @@ def main():
         epochs=args.epochs,
     )
 
-    plot_heatmap(
-        matrix=matrix,
-        batch_sizes=batch_sizes,
-        epochs=epochs,
-        save_path=save_path,
-        cmap=args.cmap,
-        vmin=args.vmin,
-        vmax=args.vmax,
-        annotate=not args.no_annotate,
-    )
+    if args.bar:
+        plot_grouped_bar(
+            matrix=matrix,
+            std_matrix=std_matrix,
+            batch_sizes=batch_sizes,
+            epochs=epochs,
+            save_path=save_path,
+            annotate=not args.no_annotate,
+            ymin=args.ymin,
+            ymax=args.ymax,
+        )
+    else:
+        plot_heatmap(
+            matrix=matrix,
+            batch_sizes=batch_sizes,
+            epochs=epochs,
+            save_path=save_path,
+            cmap=args.cmap,
+            vmin=args.vmin,
+            vmax=args.vmax,
+            annotate=not args.no_annotate,
+        )
 
 
 if __name__ == "__main__":

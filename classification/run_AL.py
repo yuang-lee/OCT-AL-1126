@@ -132,12 +132,10 @@ def lr_for_portion(portion, sched, fallback):
 
 
 def lr_grid_for(portion):
-    """sweep 模式：每個 portion 的下游 lr 候選網格（AL portion 多在 5~60）。
-    依 cold-start 最佳-lr 趨勢取小網格，控制 AL 成本。"""
-    if portion < 20:
-        return ["5e-5", "1e-4", "3e-4"]
-    else:
-        return ["1e-4", "3e-4", "5e-4"]
+    """sweep 模式：每個 portion 的下游 lr 候選網格（統一）。
+    依 θ² cold-start 參考：best-lr 幾乎都是 5e-5 或 1e-4，5e-4/1e-5 從來不是最佳；
+    AL-entropy 低 portion 另需 3e-4。故取 3e-5 5e-5 1e-4 3e-4，讓最佳值落在內部、不卡邊緣。"""
+    return ["3e-5", "5e-5", "1e-4", "3e-4"]
 
 
 def coldstart_best_lr(seed, portion, exp_path, task_type, aug_key,
@@ -303,7 +301,18 @@ def main():
 
         # ===== 決定本 portion 的候選下游 lr =====
         if args.lr_schedule == 'sweep':
-            cand_lrs = args.lr_grid.split() if args.lr_grid else lr_grid_for(portion)
+            if portion == args.portion_start:
+                # 初始步：與 Random baseline 一致 → 用該 seed 在此 portion 的 cold-start best lr（不重掃）。
+                # 後續 portion 因 AL 選樣改變 labeled set，optimal lr 會不同 → 自己 sweep。
+                blr = coldstart_best_lr(args.seed, portion, args.exp_path, args.task_type, aug_key)
+                if blr:
+                    cand_lrs = [blr]
+                    print(f'初始 ρ={portion}%：用 θ² cold-start seed{args.seed} best lr={blr}（與 Random 一致，不掃）')
+                else:
+                    cand_lrs = args.lr_grid.split() if args.lr_grid else lr_grid_for(portion)
+                    print(f'初始 ρ={portion}%：cold-start 無 seed{args.seed} 資料 → 退回 sweep {cand_lrs}')
+            else:
+                cand_lrs = args.lr_grid.split() if args.lr_grid else lr_grid_for(portion)
         elif args.lr_schedule == 'coldstart':
             cand_lrs = [str(lr_for_portion(portion, lr_sched, args.lr))]
         else:  # fixed

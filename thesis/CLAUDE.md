@@ -91,16 +91,18 @@ Table 4-2 四欄狀態：
 - **Learning rate = option A（sweep + best-val 選取）**：`--lr_schedule sweep`（預設）。每個 portion 對候選 lr（`lr_grid_for(portion)`：ρ<20→`5e-5 1e-4 3e-4`，否則 `1e-4 3e-4 5e-4`；可用 `--lr_grid` 覆寫）**各自 fresh-init 訓練**，**用 validation loss 最低的 model 當「選取器」去選下一批**（挑 lr 用 val 而非 test，避免 test leakage）。每個 lr 的 test_acc 都存進 JSON（aggregate 取 best-lr 一致）。
   - 為此 `train_eval.py` 的 `train_model` 多回傳第 3 值 `best_val_loss`（caller run_first_iter*.py 已改成忽略）。
   - 其他模式：`coldstart`（單一查表 lr，option B）、`fixed`（單一 --lr）。
+- **初始步 ρ=2.5% 的 lr**：與 Random baseline 一致——用該 **seed 在 cold-start(θ²) 的 best-lr**（同 seed→同 2.5% 子集，故 AL 起點 = Random 起點）。各 seed 差很多（10→5e-5, 24→1e-4, 38→5e-5, 42→5e-4），所以必須 per-seed。後續 ρ>2.5% 才 sweep（AL 選樣改變 → optimal lr 不同）。seed57 cold-start 無 2.5% → 退回 sweep。`run_AL.py: coldstart_best_lr()`。
 - **每 portion 不重複 3 次**：sweep 內每個 lr 訓練一次；變異來自 5 個 seed。
 - **Random/passive baseline**：`--AL_strategy random`（已加為合法策略，每步隨機選），跟其他策略同協定一起跑。
 - **labeled id 匯出**：每 portion 的 selected/cumulative + lrs_swept 存到 `AL_simclr/labeled_ids/{strategy}_seed{seed}_bs16.json`（reproduce + Ch5 視覺化）。
 - **執行**：`thesis/chapter_4/run_4_4_active_learning.sh`（6 策略 random+conf+entropy+margin+coreset+badge × 5 seeds，θ² best ckpt 初始化）。畫圖：`thesis/chapter_4/plot_al_curve.py`（Random 灰虛線 + 5 策略，2.5 interval）。
 - ⚠️ 現有 `AL_simclr/*.json` 是**舊資料**（seed42、固定 lr、舊 ckpt）→ 依新協定**重跑**。
-- **AL 演算法 bug 修正（2026-06-08，已查證 paper）**：
-  - **Coreset**：舊版只收未標註集、從隨機未標註點開始，**沒有 condition 在已標註集**（偏離 Sener & Savarese 2018）。
-  - **BADGE**：舊版 `distance_vectorized` 範數項算錯（自身距離≠0；已數值證實），k-means++ 用錯距離。
-  - 修正：原檔改名 `AL_strategy/{diversity,hybrid}_wrong.py`（保留比對）；正確版在 `{diversity,hybrid}_correct.py`；`run_AL.py` 已改 import 正確版，且 coreset 傳入 `label_idx`。conf/entropy/margin 本來就正確。
-  - ⚠️ **舊 AL_simclr 的 coreset/badge 結果是 buggy 版產生的，務必用正確版重跑。**
+- **AL 演算法 bug 全紀錄（2026-06-08，已查證 paper；正確版在 `AL_strategy/{diversity,hybrid}_correct.py`，舊版保留為 `*_wrong.py`）**：
+  conf / entropy / margin 三個 uncertainty 方法**本來就正確**。Coreset 與 BADGE 各踩了多個雷：
+  1. **特徵抽取抽錯維度（最嚴重，coreset+badge 都中）**：`Sequential(*list(model.children())[:-1])` 對 `ResNetSimCLR` 失效——它的 children **只有一個 `.backbone`**，所以 `[:-1]` 變空的 = identity → 直接吐**原始影像(3×H×W≈1.8M 維)**當「特徵」。後果：coreset 在原始像素空間算距離、badge 用原始影像當梯度嵌入的 feature（**完全錯的特徵空間**），且 coreset 算 `[Nu,Nl,1.8M]` 距離 → **OOM(677 GiB)**。修正：`net = model.backbone if hasattr(model,'backbone') else model` 再 `Sequential(net.children()[:-1])` → 正確 512 維。coreset 距離也改 matmul 免 3D broadcast。
+  2. **Coreset 沒 condition 在已標註集**：舊版只收未標註、從隨機未標註點開始 furthest-first，**沒看已標註資料**（偏離 Sener & Savarese 2018：應以「所有已標註樣本」為初始中心）。修正：`coreset()` 加收 `labeled_idx`，min_distances 由「到最近已標註點」初始化；`run_AL.py` 呼叫處傳 `label_idx`。
+  3. **BADGE 距離公式錯**：舊版 `distance_vectorized` 範數項把 i 與 center 的範數交叉相乘（自身距離≠0，已數值證實），k-means++ 用錯距離。正確：`‖g_i‖²=‖mp_i‖²·‖emb_i‖²`（同點兩範數相乘）。
+  - ⚠️ **所有舊 coreset/badge 結果都是 buggy 版（錯特徵 + 上述）產生的 → 一律刪除、用正確版重跑。** 已查 [BADGE arXiv:1906.03671] / [Coreset ozansener ICLR2018]。
 
 ### 4.5 綜合比較各項策略 — ⚠️ 依賴 4.2–4.4
 彙整 aug / SSL / AL 三策略於同一張圖。待 4.3、4.4 補齊多 seed 後產出。
