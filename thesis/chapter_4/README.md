@@ -124,16 +124,31 @@ DEVICE=cuda:4 STRATEGIES="margin" SEEDS="38 42 57" ./thesis/chapter_4/run_4_4_ac
 
 DEVICE=cuda:3 STRATEGIES="conf" SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
 
+DEVICE=cuda:1 STRATEGIES="coreset" SEEDS="42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
+
 DEVICE=cuda:5 STRATEGIES="coreset" SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
 
 DEVICE=cuda:3 STRATEGIES="badge" SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
 
+DEVICE=cuda:1 STRATEGIES="typiclust"      SEEDS="10 24" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
 
-# 全部 6 策略 × 5 seeds（random+conf+entropy+margin+coreset+badge）
-DEVICE=cuda:1 ./thesis/chapter_4/run_4_4_active_learning.sh
+DEVICE=cuda:1 STRATEGIES="typiclust"      SEEDS="38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh
 
-python3 thesis/chapter_4/plot_al_curve.py          # AL 曲線：Baseline(Random+100%) + 5 策略
+
+DEVICE=cuda:2 STRATEGIES="cluster_margin" SEEDS="10 24" ./thesis/chapter_4/run_4_4_active_learning.sh
+
+DEVICE=cuda:2 STRATEGIES="cluster_margin" SEEDS="38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh
+
+
+python3 thesis/chapter_4/plot_al_curve.py
 ```
+
+- **可用策略（8 個）**：`random conf entropy margin coreset badge` + 新增 **`typiclust`**（Diversity，低預算 SOTA，低 ρ 可能贏過現有）與 **`cluster_margin`**（Hybrid，比 BADGE 輕、效果相近的對照）。跑法相同：
+  ```bash
+  DEVICE=cuda:N STRATEGIES="typiclust"      SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh
+  DEVICE=cuda:N STRATEGIES="cluster_margin" SEEDS="10 24 38 42 57" ./thesis/chapter_4/run_4_4_active_learning.sh
+  ```
+  出處/公式/ε 選擇見 [`../CLAUDE.md`](../CLAUDE.md) §4.4。畫圖時 Diversity 多一條 TypiClust、Hybrid 多一條 Cluster-Margin（同色調不同細節色）。
 - **每 portion 的 labeled id** 另存：`AL_simclr/labeled_ids/{strategy}_seed{seed}_bs16.json`
   結構：`{portion: {lrs_swept, n_cumulative, selected, cumulative}}`（reproduce + Ch5 視覺化）。
 - lr 用 **val（非 test）**挑最佳 → 避免 test leakage（`train_model` 多回傳 best_val_loss）。
@@ -142,6 +157,18 @@ python3 thesis/chapter_4/plot_al_curve.py          # AL 曲線：Baseline(Random
 ---
 
 ## 圖表工具
+
+> **共同慣例**：所有曲線圖都畫 **Target = 88.2%** 黑虛線（legend 寫 `Target`）。
+> 4.2 與 4.3 兩張曲線在論文連續出現 → **配色刻意不重疊**：4.3 用 gray/green/orange/purple，4.2 改用 blue/red/teal/brown/pink，且 4.2 各線 marker 互異（o/s/^/D/v）。
+
+### 4.2 資料增強曲線（θ_ImageNet：w/o / HF / VF / HF+VF / HF+VF+HVF × ρ）
+```bash
+cd classification/exp/data_aug
+python3 plot_all.py                 # → 存 thesis/chapter_4/figs/imagenet_aug.png（順帶印 per-seed best-lr 統計）
+#   --plot_rhos / --plot_xticks 可改 portion 範圍；--only_lr 固定下游 lr（預設 best-lr per run）
+```
+- 5 seeds（10/24/38/42/57）跨 seed pool，best-lr per ρ；ρ=100 用 seed42 檔內 mean±std。
+- 配色/marker 見上方共同慣例（避開 4.3）。含 Target 線。輸出 `thesis/chapter_4/figs/imagenet_aug.png`（與其他 Ch4 圖同目錄）。
 
 ### 4.3 portion 曲線（θ_rand / θ_ImageNet / θ¹ / θ² × ρ）
 ```bash

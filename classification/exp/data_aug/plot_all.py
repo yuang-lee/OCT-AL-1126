@@ -5,6 +5,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
+# 與 4.3 portion_curve 對齊的碩論樣式（字級、字體、線寬）
+FONT_LABEL, FONT_TICK, FONT_LEGEND = 26, 20, 18
+plt.rcParams.update({
+    "font.size": 16, "font.family": "sans-serif",
+    "font.sans-serif": ["Arial", "DejaVu Sans"], "axes.linewidth": 1.5,
+})
+
 
 def load_data(json_path):
     with open(json_path, 'r', encoding='utf-8') as f:
@@ -55,12 +62,15 @@ def get_fixed_lr_representative_acc(rho_data, only_lr):
     return np.mean(vals), matched_key, vals
 
 
+# 配色刻意避開 4.3 portion_curve 的 4 色（gray #7F7F7F / green #2CA02C /
+# orange #E67E22 / purple #8E44AD），兩圖在碩論 4.2、4.3 連續出現不混淆。
+# 每條線 marker 也不同，彼此好區隔。格式：(label, color, marker)
 FIXED_CONFIGS = {
-    "no_aug":          ("w/o Aug (1x)",            "#888888"),
-    "aug2_horizontal": ("HF (2x)",   "#4C9BE8"),
-    "aug2_vertical":   ("VF (2x)",     "#E87C4C"),
-    "aug3":            ("HF+VF (3x)",        "#9B59B6"),
-    "aug4":            ("HF+VF+HVF (4x)",   "#27AE60"),
+    "no_aug":          ("w/o Aug (1x)",     "#7F7F7F", "v"),   # gray（naive baseline 慣例：每圖都用灰）
+    "aug2_horizontal": ("HF (2x)",          "#8C564B", "D"),   # brown
+    "aug2_vertical":   ("VF (2x)",          "#17BECF", "^"),   # teal
+    "aug3":            ("HF+VF (3x)",       "#D62728", "s"),   # red
+    "aug4":            ("HF+VF+HVF (4x)",   "#1F77B4", "o"),   # blue（最佳，最醒目）
 }
 
 EXTRA_COLORS = [
@@ -76,13 +86,13 @@ def build_aug_configs(all_data_list):
         all_keys.update(data.keys())
 
     configs = {}
-    for key, (label, color) in FIXED_CONFIGS.items():
+    for key, (label, color, marker) in FIXED_CONFIGS.items():
         if key in all_keys:
-            configs[key] = (label, color)
+            configs[key] = (label, color, marker)
     extra_keys = [k for k in sorted(all_keys) if k not in FIXED_CONFIGS]
     for i, key in enumerate(extra_keys):
         color = EXTRA_COLORS[i % len(EXTRA_COLORS)]
-        configs[key] = (key, color)
+        configs[key] = (key, color, "o")
     return configs
 
 
@@ -129,7 +139,7 @@ def print_stats(all_data_list, json_paths, aug_configs, filter_rhos=None, only_l
         print(f"  rho = {rho_display}%")
         print(f"{'='*90}")
 
-        for cfg_key, (label, _) in aug_configs.items():
+        for cfg_key, (label, _c, _m) in aug_configs.items():
 
             # Skip if not in presented_keys
             if presented_keys is not None and cfg_key not in presented_keys:
@@ -190,9 +200,9 @@ def plot(all_data_list, aug_configs, json_paths, save_path=None, only_lr=None, p
         plot_rhos_set = set(plot_rhos)
         all_rhos = [r for r in all_rhos if r in plot_rhos_set]
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(12, 8))
 
-    for cfg_key, (label, color) in aug_configs.items():
+    for cfg_key, (label, color, marker) in aug_configs.items():
 
         # Skip if not in presented_keys
         if presented_keys is not None and cfg_key not in presented_keys:
@@ -251,15 +261,18 @@ def plot(all_data_list, aug_configs, json_paths, save_path=None, only_lr=None, p
 
         linestyle = '--' if cfg_key not in FIXED_CONFIGS else '-'
 
-        ax.plot(rhos, means * 100, marker='o', markersize=5, linewidth=2,
+        ax.plot(rhos, means * 100, marker=marker, markersize=10, linewidth=3,
                 label=label, color=color, linestyle=linestyle)
         ax.fill_between(rhos, (means - stds) * 100, (means + stds) * 100,
                         alpha=0.15, color=color)
 
-    ax.set_xlabel(r'Labeled Training Data Ratio $\rho$ (%)', fontsize=15, labelpad=8)
-    ax.set_ylabel('Accuracy (%)', fontsize=15, labelpad=8)
-    ax.tick_params(axis='x', labelsize=14)
-    ax.tick_params(axis='y', labelsize=14)
+    # Target 水平參考線（88.2%，黑虛線）
+    ax.axhline(y=88.2, color='black', linestyle=(0, (8, 4)), linewidth=2.2,
+               alpha=0.85, label='Target')
+
+    ax.set_xlabel(r'Labeled Training Data Ratio $\rho$ (%)', fontsize=FONT_LABEL, labelpad=10)
+    ax.set_ylabel('Accuracy (%)', fontsize=FONT_LABEL, labelpad=10)
+    ax.tick_params(axis='both', labelsize=FONT_TICK, width=1.5, length=6)
     ax.xaxis.set_major_formatter(
         mticker.FuncFormatter(lambda x, _: f'{x*100:.4g}')
     )
@@ -278,6 +291,7 @@ def plot(all_data_list, aug_configs, json_paths, save_path=None, only_lr=None, p
         'VF (2x)',
         'HF (2x)',
         'w/o Aug (1x)',
+        'Target',
     ]
 
     # 重新排序
@@ -285,15 +299,17 @@ def plot(all_data_list, aug_configs, json_paths, save_path=None, only_lr=None, p
     ax.legend(
         [handles[i] for i in order],
         [labels[i] for i in order],
-        fontsize=9, loc='lower right',
+        fontsize=FONT_LEGEND, framealpha=0.9, loc='lower right',
         title=f"LR mode: fixed{lr_title}" if only_lr else None
     )
-    # ax.legend(fontsize=9, loc='lower right', title=f"LR mode: fixed{lr_title}" if only_lr else None)
-    ax.grid(True, linestyle='--', alpha=0.4)
+    ax.grid(True, linestyle='--', alpha=0.4, linewidth=1.0)
+    for s in ax.spines.values():
+        s.set_linewidth(1.5)
     fig.tight_layout()
 
     if save_path:
-        fig.savefig(save_path, dpi=150)
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        fig.savefig(save_path, dpi=300, bbox_inches="tight", facecolor="white")
         print(f"\nPlot saved to: {save_path}")
     else:
         plt.show()
@@ -312,7 +328,8 @@ def main():
         help='List of JSON result files (one per seed/run)')
     parser.add_argument('--portions', type=float, nargs='*', default=None,
                         help='Only print stats for these portions (e.g. --portions 2.5 10 20). Default: print all.')
-    parser.add_argument('--save', type=str, default='./imagenet_aug.png',
+    parser.add_argument('--save', type=str,
+                        default='../../../thesis/chapter_4/figs/imagenet_aug.png',
                         help='Path to save the plot. If not set, show interactively.')
     parser.add_argument('--only_lr', type=str, default=None,
                         help='If specified, only use this exact LR from all JSON files instead of picking the best LR per run.')

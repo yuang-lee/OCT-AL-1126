@@ -103,6 +103,13 @@ Table 4-2 四欄狀態：
   2. **Coreset 沒 condition 在已標註集**：舊版只收未標註、從隨機未標註點開始 furthest-first，**沒看已標註資料**（偏離 Sener & Savarese 2018：應以「所有已標註樣本」為初始中心）。修正：`coreset()` 加收 `labeled_idx`，min_distances 由「到最近已標註點」初始化；`run_AL.py` 呼叫處傳 `label_idx`。
   3. **BADGE 距離公式錯**：舊版 `distance_vectorized` 範數項把 i 與 center 的範數交叉相乘（自身距離≠0，已數值證實），k-means++ 用錯距離。正確：`‖g_i‖²=‖mp_i‖²·‖emb_i‖²`（同點兩範數相乘）。
   - ⚠️ **所有舊 coreset/badge 結果都是 buggy 版（錯特徵 + 上述）產生的 → 一律刪除、用正確版重跑。** 已查 [BADGE arXiv:1906.03671] / [Coreset ozansener ICLR2018]。
+- **新增兩個 AL 策略（2026-06-10，為了找「能否再提升」）**：依官方碼/論文實作，都重用「進 `model.backbone` 抽 512 維」特徵。
+  - **TypiClust**（Diversity，Hacohen et al. ICML 2022，官方 repo `avihu111/TypiClust`）：對 (已標註+未標註) 特徵 KMeans（`n_clusters=min(|L|+budget,500)`），群依 (已標註少↑, 大小↓) 排序、排除 size<5 小群，每群挑 **typicality=1/(K_NN=20 平均距離+1e-5)** 最高的未標註點。`diversity_correct.py::typiclust`。**定位：低預算(小 ρ)可能真的贏過 coreset/BADGE（公認低預算 SOTA）；高預算反而不一定。**
+  - **Cluster-Margin**（Hybrid，Citovsky et al. NeurIPS 2021）：取 margin 最小的 `k_m=10·k_t` 候選 → 候選特徵 **L2-normalize** → HAC(average linkage, `distance_threshold=ε`) → 群按大小升冪 round-robin 每群隨機取一，湊 k_t。**ε 論文未明定** → 本實作取「候選兩兩距離中位數 × `EPS_FRAC=0.5`」（尺度自適應、可調）。`hybrid_correct.py::cluster_margin`。**定位：比 BADGE 輕量、效果相近（非更強），當對照組；論文勿寫「比 BADGE 強」。**
+  - 接線：`run_AL.py` choices/import/dispatch 已加（**未動既有 6 策略**）；`plot_al_curve.py` GROUPS：Diversity 加 TypiClust(淺綠)、Hybrid 加 Cluster-Margin(淺紅)，legend 拆成 Uncertainty|Diversity|Hybrid 三欄。（修了個解析 bug：`f.split("_")[0]` 對 `cluster_margin` 會切錯 → 改 `split("_seed")[0]`。）
+  - **TypiClust 是「cold-start / low-budget AL」家族，與本論文 Ch3 的 uncertainty AL 是不同範式**（user 2026-06-10 指出）。注意「cold start」一詞有兩義：① codebase 的 `cold_start_*` = 被動 baseline（隨機 ρ%、無 AL，4.3 portion 曲線）；② 文獻的 cold-start AL = 處理「極少/零標註下如何選樣」的一類主動方法（TypiClust/ProbCover）。TypiClust 屬 ②，純用表示空間密度選樣、不看模型 uncertainty；原版用 **frozen 自監督特徵**且能**無標註自選第一批**。
+  - **目前決定（option A，維持現狀）**：TypiClust/Cluster-Margin 與所有策略一致——**初始 2.5% 一律 random**（同 seed→同初始池，公平比較 + 沿用 cold-start best-lr），且 TypiClust **用當前 finetuned 模型的 backbone 特徵**（非 frozen SimCLR）。Cluster-Margin 本來就需要 warm-start（margin 要有 model）。
+  - **【Ch5 待探討】cold-start AL 的選擇能否「搭配其他策略」進一步提升 performance**（user 想在第五章寫）：可做的 bonus 實驗——(i) TypiClust 改用 **frozen SimCLR 特徵 + 自選初始批**（忠於原版，發揮低預算優勢）；(ii) **混合排程**：低 ρ 用 TypiClust（density）、高 ρ 切換到 uncertainty/BADGE（呼應原 paper「opposite strategies suit high/low budgets」）；(iii) 比較「random 初始 vs TypiClust 自選初始」對後續軌跡的影響。主結果仍走 option A，這些當 Ch5 深入分析。
 
 ### 4.5 綜合比較各項策略 — ⚠️ 依賴 4.2–4.4
 彙整 aug / SSL / AL 三策略於同一張圖。待 4.3、4.4 補齊多 seed 後產出。

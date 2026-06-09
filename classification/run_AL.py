@@ -19,8 +19,8 @@ from classification.model.simclr.resnet_simclr import ResNetSimCLR
 from classification.utils.train_eval import train_model
 
 from classification.AL_strategy.uncertainty import conf, entropy, margin
-from classification.AL_strategy.diversity_correct import coreset   # 正確版（conditioned on labeled set）
-from classification.AL_strategy.hybrid_correct import badge        # 正確版（修好梯度嵌入距離）
+from classification.AL_strategy.diversity_correct import coreset, typiclust   # 正確版 + TypiClust
+from classification.AL_strategy.hybrid_correct import badge, cluster_margin    # 正確版 + Cluster-Margin
 
 
 """
@@ -47,7 +47,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--task_type', type=str, choices=['easy', 'medium', 'hard'], required=True)
     parser.add_argument('--AL_strategy', type=str,
-                        choices=['random', 'conf', 'entropy', 'margin', 'coreset', 'badge'],
+                        choices=['random', 'conf', 'entropy', 'margin', 'coreset', 'badge',
+                                 'typiclust', 'cluster_margin'],
                         required=True)
 
     # AL related setup
@@ -345,8 +346,13 @@ def main():
             elif args.AL_strategy == 'coreset':
                 # 傳入目前已標註集 label_idx 當 k-center 的初始中心（正確 coreset）
                 to_label_idx = coreset(last_trained_model, data_dir, unlabeled_idx, num_to_label, args.device, label_idx)
+            elif args.AL_strategy == 'typiclust':
+                # 低預算 diversity：含已標註集 → 群覆蓋偏好未標註區（density-based）
+                to_label_idx = typiclust(last_trained_model, data_dir, unlabeled_idx, num_to_label, args.device, label_idx)
             elif args.AL_strategy == 'badge':
                 to_label_idx = badge(last_trained_model, data_dir, unlabeled_idx, num_to_label, args.device)
+            elif args.AL_strategy == 'cluster_margin':
+                to_label_idx = cluster_margin(last_trained_model, data_dir, unlabeled_idx, num_to_label, args.device)
             else:
                 raise NotImplementedError(f"AL strategy {args.AL_strategy} not implemented")
         

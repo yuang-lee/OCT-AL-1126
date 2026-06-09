@@ -13,6 +13,8 @@ import torch
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from tqdm import tqdm
+from sklearn.cluster import KMeans, MiniBatchKMeans
+from sklearn.neighbors import NearestNeighbors
 
 
 _TF = transforms.Compose([
@@ -80,3 +82,89 @@ def coreset(model, data_dir, unlabel_data_idx, num_data_to_label, device, labele
         min_distances[selected] = -np.inf   # 已選的不再挑
 
     return [unlabel_data_idx[i] for i in selected]
+
+
+# =============================================================================
+# TypiClust (Hacohen, Dekel, Weinshall, ICML 2022) — 低預算 diversity。
+# 官方碼：github.com/avihu111/TypiClust。對 (已標註+未標註) 特徵做 KMeans，
+# 在「未被標註覆蓋、又大、又密(typical)」的群裡挑代表點。
+#   typicality = 1 / (到 K_NN 最近鄰的平均距離 + 1e-5)。
+# 與 coreset 互補：coreset 走 geometry(furthest)，typiclust 走 density(typical)。
+# =============================================================================
+_K_NN = 20
+_MIN_CLUSTER_SIZE = 5
+_MAX_NUM_CLUSTERS = 500
+
+
+def _typicality(feats, k):
+    """feats: [m, D] → 每點 typicality（1/到 k 最近鄰平均距離）。"""
+    m = feats.shape[0]
+    if m == 1:
+        return np.array([1.0])
+    k = max(1, min(k, m - 1))
+    nn = NearestNeighbors(n_neighbors=k + 1).fit(feats)   # +1 因為含自己
+    dist, _ = nn.kneighbors(feats)
+    mean_d = dist[:, 1:].mean(axis=1)                     # 去掉第 0 欄(自己)
+    return 1.0 / (mean_d + 1e-5)
+
+
+def typiclust(model, data_dir, unlabel_data_idx, num_data_to_label, device, labeled_idx=None):
+    """
+    Args:
+        labeled_idx: 目前已標註索引；用來把含已標註的群往後排（優先挑未覆蓋區域）。
+    Returns:
+        選中的未標註索引（長度 num_data_to_label）。
+    """
+    labeled_idx = labeled_idx or []
+    net = model.backbone if hasattr(model, "backbone") else model
+    feature_extractor = torch.nn.Sequential(*list(net.children())[:-1]).eval().to(device)
+    full_dataset = datasets.ImageFolder(f"{data_dir}/train", transform=_TF)
+
+    emb_u = _extract_features(feature_extractor, full_dataset, unlabel_data_idx, device,
+                              "Typiclust: unlabeled feats")        # [Nu, D]
+    Nu = emb_u.shape[0]
+    if labeled_idx:
+        emb_l = _extract_features(feature_extractor, full_dataset, labeled_idx, device,
+                                  "Typiclust: labeled feats")      # [Nl, D]
+        feats = np.vstack([emb_u, emb_l])
+    else:
+        feats = emb_u
+    is_unlabeled = np.arange(feats.shape[0]) < Nu     # 前 Nu 個位置是未標註
+
+    budget = num_data_to_label
+    n_clusters = int(min(len(labeled_idx) + budget, _MAX_NUM_CLUSTERS))
+    n_clusters = max(1, min(n_clusters, feats.shape[0]))
+    if n_clusters <= 50:
+        km = KMeans(n_clusters=n_clusters, random_state=0, n_init=10)
+    else:
+        km = MiniBatchKMeans(n_clusters=n_clusters, random_state=0, batch_size=5000, n_init=3)
+    cl = km.fit_predict(feats)
+
+    clusters = {}
+    for c in np.unique(cl):
+        members = np.where(cl == c)[0]
+        clusters[c] = {"members": members, "size": len(members),
+                       "n_lab": int(np.sum(~is_unlabeled[members]))}
+    # 只保留 size>=MIN 的群（不足則放寬到全部）；排序：已標註少優先、再大群優先
+    elig = [c for c in clusters if clusters[c]["size"] >= _MIN_CLUSTER_SIZE]
+    if not elig:
+        elig = list(clusters.keys())
+    order = sorted(elig, key=lambda c: (clusters[c]["n_lab"], -clusters[c]["size"]))
+
+    selected, i, guard = [], 0, 0
+    max_guard = budget * 50 + len(order) + 10
+    seen = set()
+    while len(selected) < budget and guard < max_guard:
+        guard += 1
+        c = order[i % len(order)]
+        i += 1
+        cand = [p for p in clusters[c]["members"] if p < Nu and p not in seen]
+        if not cand:
+            continue
+        cand = np.array(cand)
+        typ = _typicality(feats[cand], _K_NN)
+        pick = int(cand[int(np.argmax(typ))])
+        selected.append(pick)
+        seen.add(pick)
+
+    return [unlabel_data_idx[p] for p in selected]

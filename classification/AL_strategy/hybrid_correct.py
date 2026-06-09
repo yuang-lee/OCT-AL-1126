@@ -18,6 +18,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from tqdm import tqdm
+from sklearn.cluster import AgglomerativeClustering
 
 
 def distance_vectorized(X1, X2, mu):
@@ -113,3 +114,83 @@ def badge(model, data_dir, unlabel_data_idx, num_data_to_label, device, batch_si
         chosen, chosen_list, mu, D2 = init_centers_optimized(X1, X2, chosen, chosen_list, mu, D2)
 
     return [unlabel_data_idx[i] for i in chosen_list]
+
+
+# =============================================================================
+# Cluster-Margin (Citovsky et al., NeurIPS 2021, "Batch Active Learning at Scale")
+# 輕量 hybrid：① 取 margin 最小(最不確定)的 k_m=km_factor·k_t 個候選
+#   ② 對候選特徵做 HAC(average linkage, distance_threshold=ε)
+#   ③ 群按大小升冪 round-robin、每群隨機取一個，湊滿 k_t。
+# 論文未明定 ε（只說 predefined）→ 本實作把候選特徵 L2-normalize，ε 取「候選兩兩距離
+#   中位數 × EPS_FRAC」（尺度自適應，預設 0.5），可調。比 BADGE 輕、效果相近（非更強）。
+# =============================================================================
+_CM_KM_FACTOR = 10
+_CM_EPS_FRAC = 0.5
+
+
+def cluster_margin(model, data_dir, unlabel_data_idx, num_data_to_label, device,
+                   batch_size=64, km_factor=_CM_KM_FACTOR, eps_frac=_CM_EPS_FRAC):
+    k_t = num_data_to_label
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+    ])
+    full_dataset = datasets.ImageFolder(f"{data_dir}/train", transform=transform)
+    loader = DataLoader(Subset(full_dataset, unlabel_data_idx), batch_size=batch_size,
+                        shuffle=False, num_workers=4, pin_memory=True)
+    model.eval().to(device)
+    net = model.backbone if hasattr(model, "backbone") else model
+    feature_extractor = nn.Sequential(*list(net.children())[:-1]).eval().to(device)
+
+    embs, probs = [], []
+    with torch.no_grad():
+        for inputs, _ in tqdm(loader, desc="ClusterMargin: feats + probs"):
+            inputs = inputs.to(device, non_blocking=True)
+            f = feature_extractor(inputs)
+            if f.dim() > 2:
+                f = f.view(f.size(0), -1)
+            p = F.softmax(model(inputs), dim=1)
+            embs.append(f.cpu()); probs.append(p.cpu())
+    embs = torch.cat(embs).numpy().astype(np.float32)
+    probs = torch.cat(probs).numpy().astype(np.float32)
+
+    # margin = top1 - top2（越小越不確定）→ 取最小的 k_m 個候選
+    part = np.sort(probs, axis=1)
+    margin = part[:, -1] - part[:, -2]
+    Nu = len(unlabel_data_idx)
+    k_m = int(min(km_factor * k_t, Nu))
+    cand = np.argsort(margin)[:k_m]
+    if k_m <= k_t:                              # 候選不夠分群 → 直接回傳最不確定的 k_t
+        return [unlabel_data_idx[int(i)] for i in cand[:k_t]]
+
+    # 候選特徵 L2-normalize → ε = 兩兩距離中位數 × eps_frac（尺度自適應）
+    cf = embs[cand]
+    cf = cf / (np.linalg.norm(cf, axis=1, keepdims=True) + 1e-8)
+    sq = np.sum(cf ** 2, axis=1)
+    d2 = np.maximum(sq[:, None] + sq[None, :] - 2.0 * (cf @ cf.T), 0.0)
+    iu = np.triu_indices(len(cf), k=1)
+    dists = np.sqrt(d2[iu])
+    eps = float(np.median(dists)) * eps_frac if dists.size else 1.0
+    hac = AgglomerativeClustering(n_clusters=None, linkage="average", distance_threshold=eps)
+    lab = hac.fit_predict(cf)
+
+    groups = {}
+    for j, c in enumerate(lab):
+        groups.setdefault(int(c), []).append(j)
+    rng = np.random.RandomState(0)
+    for c in groups:
+        rng.shuffle(groups[c])
+    order = sorted(groups.keys(), key=lambda c: len(groups[c]))   # 群大小升冪
+
+    selected = []
+    while len(selected) < k_t:
+        progressed = False
+        for c in order:
+            if groups[c]:
+                selected.append(int(cand[groups[c].pop()]))
+                progressed = True
+                if len(selected) >= k_t:
+                    break
+        if not progressed:
+            break
+    return [unlabel_data_idx[p] for p in selected]

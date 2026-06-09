@@ -12,7 +12,7 @@
 
 用法（repo 根）：python3 thesis/chapter_4/plot_al_curve.py
 """
-import os, sys, json, argparse
+import os, sys, json, argparse, re
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -29,15 +29,25 @@ plt.rcParams.update({
 AL_DIR = os.path.join(EXP, "AL_simclr")
 
 # 分組：(類別, [(key, 顯示名, 顏色, marker)])
+# 每類用同色調、不同細節色（如 Uncertainty 三層藍）：
+#   Uncertainty=藍、Diversity=綠、Hybrid=紅、Baseline=灰。
+# 顏色：同類同色調不同細節色（Uncertainty 藍 / Diversity 綠 / Hybrid 紅 / Baseline 灰）。
+# marker：每個方法專屬、全圖互異（global 與單組圖一致）→ 顏色+形狀雙重編碼，最好分辨。
 GROUPS = [
     ("Uncertainty", [
-        ("conf",    "Confidence", "#08519C", "o"),
-        ("margin",  "Margin",     "#3182BD", "o"),
-        ("entropy", "Entropy",    "#6BAED6", "o"),
+        ("conf",    "Confidence", "#08519C", "o"),   # ○
+        ("margin",  "Margin",     "#3182BD", "s"),   # □
+        ("entropy", "Entropy",    "#6BAED6", "^"),   # △
     ]),
-    ("Diversity", [("coreset", "Coreset", "#2CA02C", "s")]),
-    ("Hybrid",    [("badge",   "BADGE",   "#D62728", "D")]),
-    ("Baseline",  [("random",  "Random",  "#404040", "X")]),
+    ("Diversity", [
+        ("coreset",   "Coreset",   "#238B45", "D"),   # ◇ 深綠
+        ("typiclust", "TypiClust", "#74C476", "v"),   # ▽ 淺綠
+    ]),
+    ("Hybrid", [
+        ("badge",          "BADGE",          "#A50F15", "P"),   # ✚ 深紅
+        ("cluster_margin", "Cluster-Margin", "#FB6A4A", "*"),   # ✦ 淺紅
+    ]),
+    ("Baseline",  [("random",  "Random",  "#404040", "X")]),   # ✕
 ]
 
 
@@ -46,8 +56,8 @@ def pool_strategy(strat, aug):
         return {}
     pooled = {}
     for f in os.listdir(AL_DIR):
-        if not f.endswith(".json") or "copy" in f or f.split("_")[0] != strat:
-            continue
+        if not f.endswith(".json") or "copy" in f or f.split("_seed")[0] != strat:
+            continue   # 用 _seed 切，避免 'cluster_margin' 被 '_' 切錯
         d = json.load(open(os.path.join(AL_DIR, f)))
         if aug not in d:
             continue
@@ -78,6 +88,86 @@ def random_baseline(aug):
     return out
 
 
+def _fmt_lr(lr):
+    """'5e-05'→'5e-5'、'0.0001'→'1e-4'、'0.0003'→'3e-4'。"""
+    try:
+        return f"{float(lr):.0e}".replace("e-0", "e-").replace("e+0", "e+")
+    except Exception:
+        return str(lr)
+
+
+def _per_seed_best(lrd):
+    """單一 seed×portion 的 {lr: vals} → (best_acc%, best_lr)；無資料回 None。"""
+    best = None
+    for lr, v in lrd.items():
+        a = _acc_list(v)
+        if not a:
+            continue
+        m = float(np.mean(a)) * 100.0
+        if best is None or m > best[0]:
+            best = (m, lr)
+    return best
+
+
+def print_per_seed_tables(aug):
+    """每個 strategy 印一張表：列=portion，欄=seed，格子= 'acc (best_lr)'。"""
+    if not os.path.isdir(AL_DIR):
+        print("AL_simclr/ 不存在 — 無 per-seed 結果可印。")
+        return
+    # strategy -> seed -> {portion: (acc, lr)}
+    data = {}
+    for f in os.listdir(AL_DIR):
+        if not f.endswith(".json") or "copy" in f:
+            continue
+        strat = f.split("_seed")[0]   # 用 _seed 切，避免 'cluster_margin' 被 '_' 切錯
+        m = re.search(r"seed(\d+)", f)
+        if not m:
+            continue
+        seed = m.group(1)
+        d = json.load(open(os.path.join(AL_DIR, f)))
+        if aug not in d:
+            continue
+        for p, lrd in d[aug].items():
+            b = _per_seed_best(lrd)
+            if b:
+                data.setdefault(strat, {}).setdefault(seed, {})[float(p)] = b
+    if not data:
+        print("AL_simclr/ 目前無任何 per-seed 結果。")
+        return
+
+    # strategy 順序：依 GROUPS，再補其他
+    order = [k for _, items in GROUPS for k, *_ in items]
+    strats = [s for s in order if s in data] + [s for s in data if s not in order]
+
+    CW = 14  # 每個 seed 欄寬
+    print("\n" + "=" * 78)
+    print(f" AL per-seed results  (aug={aug})   格子 = test_acc(%) (best downstream lr)")
+    print("=" * 78)
+    for strat in strats:
+        seeds = sorted(data[strat], key=lambda s: int(s))
+        portions = sorted({p for sd in data[strat].values() for p in sd})
+        print(f"\n■ {strat}")
+        header = (f"{'ρ(%)':>6} | " + " ".join(f"seed{s:<{CW-4}}" for s in seeds)
+                  + f" ‖ {'mean':>6} {'std':>5}")
+        print(header)
+        print("-" * len(header))
+        for p in portions:
+            cells = []
+            accs = []
+            for s in seeds:
+                hit = data[strat][s].get(p)
+                if hit:
+                    cells.append(f"{hit[0]:4.1f} ({_fmt_lr(hit[1])})".ljust(CW))
+                    accs.append(hit[0])
+                else:
+                    cells.append("—".center(CW))
+            mean_s = float(np.mean(accs)) if accs else float("nan")
+            std_s = float(np.std(accs, ddof=1)) if len(accs) > 1 else 0.0
+            agg = f" ‖ {mean_s:>6.1f} {std_s:>5.1f}" if accs else f" ‖ {'—':>6} {'—':>5}"
+            print(f"{p:>6.1f} | " + " ".join(cells) + agg)
+    print("=" * 78 + "\n")
+
+
 def style_ax(ax):
     ax.tick_params(axis="both", labelsize=FONT_TICK, width=1.5, length=6)
     ax.grid(True, linestyle="--", alpha=0.4, linewidth=1.0)
@@ -85,26 +175,86 @@ def style_ax(ax):
         s.set_linewidth(1.5)
 
 
-def grouped_legend(ax, groups, loc="lower right", fontsize=15):
-    """自排階層式 legend：類別標題粗體、貼齊最左；策略 = 線+marker 後接文字。
-    groups: [(header, [(label, color, linestyle, marker), ...]), ...]"""
-    rows = []
-    for header, items in groups:
-        rows.append(TextArea(header, textprops=dict(weight="bold", fontsize=fontsize)))
-        for label, color, ls, marker in items:
-            da = DrawingArea(30, 14, 0, 0)
-            da.add_artist(Line2D([3, 27], [7, 7], color=color, linewidth=3, linestyle=ls))
-            if marker:
-                da.add_artist(Line2D([15], [7], color=color, marker=marker,
-                                     markersize=7, linestyle="None"))
-            row = HPacker(children=[da, TextArea(label, textprops=dict(fontsize=fontsize))],
-                          align="center", pad=0, sep=5)
-            rows.append(row)
-    box = VPacker(children=rows, align="left", pad=2, sep=3)
-    anchored = AnchoredOffsetbox(loc=loc, child=box, frameon=True, borderpad=0.4)
+def _method_row(label, color, ls, marker, fontsize):
+    da = DrawingArea(30, 14, 0, 0)
+    da.add_artist(Line2D([3, 27], [7, 7], color=color, linewidth=3, linestyle=ls))
+    if marker:
+        da.add_artist(Line2D([15], [7], color=color, marker=marker, markersize=7, linestyle="None"))
+    return HPacker(children=[da, TextArea(label, textprops=dict(fontsize=fontsize))],
+                   align="center", pad=0, sep=5)
+
+
+def grouped_legend(ax, columns, bottom_items=None, loc="lower right", fontsize=15):
+    """多欄階層式 legend + 可選底部橫向 row。
+    columns: [(groups, item_sep), ...]，groups=[(header,[(label,color,ls,marker),...]),...]；
+             item_sep 控制群組內各方法的垂直行距。
+    bottom_items: [(label,color,ls,marker), ...] 橫向排在所有欄下方（同一列、左對齊），無標題。"""
+    def make_column(groups, item_sep):
+        gboxes = []
+        for header, items in groups:
+            item_box = VPacker(children=[_method_row(*it, fontsize) for it in items],
+                               align="left", pad=0, sep=item_sep)
+            gbox = VPacker(children=[
+                TextArea(header, textprops=dict(weight="bold", fontsize=fontsize)),
+                DrawingArea(1, 3, 0, 0),
+                item_box,
+            ], align="left", pad=0, sep=2)
+            gboxes.append(gbox)
+        return VPacker(children=gboxes, align="left", pad=0, sep=8)
+
+    col_boxes = [make_column(g, s) for (g, s) in columns if g]
+    top = HPacker(children=col_boxes, align="top", pad=0, sep=16)
+
+    children = [top]
+    if bottom_items:
+        children.append(DrawingArea(1, 10, 0, 0))   # 上方欄位與底部列之間留白
+        bottom = HPacker(children=[_method_row(*it, fontsize) for it in bottom_items],
+                         align="center", pad=0, sep=22)   # Random 與 Target 同列、相鄰
+        children.append(bottom)
+    box = VPacker(children=children, align="left", pad=2, sep=2)
+
+    anchored = AnchoredOffsetbox(loc=loc, child=box, frameon=True, borderpad=0.5)
     anchored.patch.set_alpha(0.9)
     anchored.patch.set_edgecolor("0.7")
     ax.add_artist(anchored)
+
+
+def draw_single_group(gname, items, out, aug):
+    """單一類別一張圖：該類方法 + Random(灰虛) + Target(黑虛)，單欄簡單 legend（portion 風格）。
+    顏色與 marker 都沿用 GROUPS（跨 global/單組圖一致）。"""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    drew = False
+    for key, label, color, marker in items:
+        data = pool_strategy(key, aug)
+        if not data:
+            print(f"    [skip] {key}: 無資料"); continue
+        ps = sorted(data)
+        mean = np.array([data[p][0] for p in ps]); std = np.array([data[p][1] for p in ps])
+        ax.plot(ps, mean, marker=marker, color=color,
+                linewidth=3, markersize=9, label=label)
+        ax.fill_between(ps, mean - std, mean + std, color=color, alpha=0.12)
+        drew = True
+    if not drew:
+        plt.close(fig); print(f"  [skip group] {gname}: 無資料，不畫"); return
+    # Random baseline（灰虛線）
+    rb = random_baseline(aug)
+    if rb:
+        ps = sorted(rb); mean = np.array([rb[p][0] for p in ps]); std = np.array([rb[p][1] for p in ps])
+        ax.plot(ps, mean, marker="X", color="#404040", linewidth=3, markersize=9,
+                linestyle="--", label="Random")
+        ax.fill_between(ps, mean - std, mean + std, color="#404040", alpha=0.12)
+    # Target（黑虛線）
+    ax.axhline(y=88.2, color="black", linestyle=(0, (8, 4)), linewidth=2.2, alpha=0.85, label="Target")
+
+    ax.set_xlabel(r"Labeled Training Data Ratio $\rho$ (%)", fontsize=FONT_LABEL, labelpad=10)
+    ax.set_ylabel("Accuracy (%)", fontsize=FONT_LABEL, labelpad=10)
+    ax.set_xticks([5, 10, 20, 30, 40, 50, 60])
+    ax.legend(fontsize=18, framealpha=0.9, loc="lower right")   # 單欄、portion_curve 風格
+    style_ax(ax)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white")
+    print(f"saved -> {out}")
 
 
 def main():
@@ -112,6 +262,8 @@ def main():
     ap.add_argument("--aug", default="aug4")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "figs", "al_curve.png"))
     args = ap.parse_args()
+
+    print_per_seed_tables(args.aug)
 
     fig, ax = plt.subplots(figsize=(12, 8))
     legend_groups = []
@@ -139,33 +291,53 @@ def main():
     if not drew:
         print("AL_simclr/ 目前無任何策略資料 — 先跑 run_4_4_active_learning.sh"); return
 
-    # θ² 在 ρ=100% full fine-tune 的水平參考線
-    t2 = pool_seed_files(os.path.join(EXP, "cold_start_simclr"),
-                         lambda f: "simclr_lr0.0002_simclr_bs256_simclr_ep500" in f, args.aug)
-    if 100.0 in t2:
-        y100 = t2[100.0][0]
-        DASH = (0, (8, 4))
-        ax.axhline(y=y100, color="black", linestyle=DASH, linewidth=2.2, alpha=0.85)
-        item_100 = ("100% full data", "black", DASH, None)
-        # 併入 Baseline 群組（與 Random 同列）；若 Random 沒資料就自建 Baseline
-        for h, baseitems in legend_groups:
-            if h == "Baseline:":
-                baseitems.append(item_100)
-                break
-        else:
-            legend_groups.append(("Baseline:", [item_100]))
-        print(f"  θ² @100% full FT = {y100:.2f}")
+    # Target Performance 水平參考線（寫死 88.2%）
+    TARGET = 88.2
+    DASH = (0, (8, 4))
+    ax.axhline(y=TARGET, color="black", linestyle=DASH, linewidth=2.2, alpha=0.85)
+    item_target = ("Target", "black", DASH, None)
+    # 併入 Baseline 群組（與 Random 同列）；若 Random 沒資料就自建 Baseline
+    for h, baseitems in legend_groups:
+        if h == "Baseline:":
+            baseitems.append(item_target)
+            break
+    else:
+        legend_groups.append(("Baseline:", [item_target]))
+    print(f"  Target Performance line = {TARGET:.1f}%")
 
     ax.set_xlabel(r"Labeled Training Data Ratio $\rho$ (%)", fontsize=FONT_LABEL, labelpad=10)
     ax.set_ylabel("Accuracy (%)", fontsize=FONT_LABEL, labelpad=10)
     ax.set_xticks([5, 10, 20, 30, 40, 50, 60])
-    grouped_legend(ax, legend_groups, loc="lower right", fontsize=FONT_LEGEND)
+    # 兩欄等高；Random / Target 各掛在所屬欄底部（自動靠齊左緣，一左一右），不寫 "Baseline"
+    by = dict(legend_groups)
+    def _grp(h):
+        return [(h, by[h])] if by.get(h) else []
+    base = by.get("Baseline:", [])                        # [Random, Target]
+    foot_random = next((it for it in base if it[0] == "Random"), None)
+    foot_target = next((it for it in base if it[0] == "Target"), None)
+    # 三欄：Uncertainty | Diversity | Hybrid（拆開）；Random 與 Target 同列橫排在最下方
+    columns = [
+        (_grp("Uncertainty:"), 4),
+        (_grp("Diversity:"),   3),
+        (_grp("Hybrid:"),      3),
+    ]
+    columns = [(g, s) for (g, s) in columns if g]
+    bottom = [it for it in (foot_random, foot_target) if it]   # Random 左、Target 右
+    grouped_legend(ax, columns, bottom_items=bottom, loc="lower right", fontsize=FONT_LEGEND)
     style_ax(ax)
     fig.tight_layout()
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     fig.savefig(args.out, dpi=300, bbox_inches="tight", facecolor="white")
     print(f"saved -> {args.out}")
+
+    # 另外三張：每類別單獨一張（單欄 legend、組內不同 marker、顏色/marker 跨圖一致）
+    base, ext = os.path.splitext(args.out)
+    for gname, items in GROUPS:
+        if gname == "Baseline":
+            continue
+        print(f"\n— 單組圖：{gname} —")
+        draw_single_group(gname, items, f"{base}_{gname.lower()}{ext}", args.aug)
 
 
 if __name__ == "__main__":
