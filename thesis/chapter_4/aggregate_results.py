@@ -55,8 +55,11 @@ def best_lr_per_portion(portion_to_lrdict):
 
 
 def pool_seed_files(folder, match, aug="aug4"):
-    """把資料夾中所有符合 match(filename) 的 seed 檔，於同 (ρ,lr) pool 起所有 runs。"""
-    pooled = {}
+    """全論文彙整慣例（per-seed best-lr → over seeds，非 pooled）：
+    每個符合 match(filename) 的 seed 檔，先在「該 seed 內」以 runs 平均挑 best lr（得該 seed 的
+    representative acc），再對 seeds 取 mean±std。回傳 {ρ: (mean%, std%, lr_label, n_seeds)}，
+    lr_label = 各 seed best-lr 的眾數（僅供參考）。"""
+    per_portion = {}   # ρ -> list of (rep_acc_01, best_lr)
     if not os.path.isdir(folder):
         return {}
     for f in os.listdir(folder):
@@ -69,9 +72,28 @@ def pool_seed_files(folder, match, aug="aug4"):
         if aug not in d:
             continue
         for p, lrd in d[aug].items():
+            best = None
             for lr, vals in lrd.items():
-                pooled.setdefault(float(p), {}).setdefault(lr, []).extend(_acc_list(vals))
-    return best_lr_per_portion(pooled)
+                a = np.asarray(_acc_list(vals), dtype=float)
+                if a.size == 0:
+                    continue
+                m = a.mean()                     # 該 seed 在此 lr 的 runs 平均
+                if best is None or m > best[0]:
+                    best = (m, lr, a)            # 保留該 seed best-lr 的 runs
+            if best is not None:
+                per_portion.setdefault(float(p), []).append(best)   # (rep_acc, best_lr, runs)
+    out = {}
+    for p, reps in per_portion.items():
+        accs = np.array([r[0] for r in reps], dtype=float)
+        lrs = [r[1] for r in reps]
+        lr_label = max(set(lrs), key=lrs.count)
+        if accs.size > 1:
+            std = float(accs.std(ddof=1))                  # 多 seed → std over seeds（ddof=1）
+        else:
+            runs = np.asarray(reps[0][2], dtype=float)     # 單 seed（如 ρ=100）→ 用該 seed best-lr 的 runs
+            std = float(runs.std(ddof=1)) if runs.size > 1 else 0.0
+        out[float(p)] = (float(accs.mean()) * 100, std * 100, lr_label, len(accs))
+    return out
 
 
 def print_init_table(aug):

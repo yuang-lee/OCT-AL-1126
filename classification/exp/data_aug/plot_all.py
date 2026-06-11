@@ -13,6 +13,12 @@ plt.rcParams.update({
 })
 
 
+def _sstd(x):
+    """樣本標準差（ddof=1，與 4.3/4.4 一致）；n<2 回 0。"""
+    x = np.asarray(x, dtype=float)
+    return float(x.std(ddof=1)) if x.size > 1 else 0.0
+
+
 def load_data(json_path):
     with open(json_path, 'r', encoding='utf-8') as f:
         return json.load(f)
@@ -232,7 +238,7 @@ def plot(all_data_list, aug_configs, json_paths, save_path=None, only_lr=None, p
                     continue
                 rhos.append(rho / 100.0)
                 means.append(mean)
-                stds.append(np.std(vals))
+                stds.append(_sstd(vals))
                 continue
 
             # Normal case: cross-JSON mean & std
@@ -250,7 +256,7 @@ def plot(all_data_list, aug_configs, json_paths, save_path=None, only_lr=None, p
 
             rhos.append(rho / 100.0)
             means.append(np.mean(representative_accs))
-            stds.append(np.std(representative_accs))
+            stds.append(_sstd(representative_accs))
 
         if not rhos:
             continue
@@ -315,6 +321,46 @@ def plot(all_data_list, aug_configs, json_paths, save_path=None, only_lr=None, p
         plt.show()
 
 
+def print_summary_table(all_data_list, json_paths, aug_configs, presented_keys, plot_rhos, only_lr):
+    """簡潔表：列 = 有畫的 portion，欄 = aug config，格子 = Cross-JSON mean±std(%)。
+    = 每個 seed 取自己 best-lr 的 representative acc → 對 5 個 seed 取 mean/std（與曲線一致）；
+    ρ=100 為 seed-independent，只用 seed42 檔內 runs 的 mean±std。"""
+    keys = [k for k in aug_configs if (presented_keys is None or k in presented_keys)]
+    labels = [aug_configs[k][0] for k in keys]
+    CW = 14
+    width = 8 + (CW + 1) * len(keys)
+    # ρ=100 用的 seed42 檔索引
+    sp_idx = next((i for i, p in enumerate(json_paths)
+                   if os.path.basename(p) == os.path.basename(SPECIAL_RHO_100_JSON)), None)
+
+    print("\n" + "=" * width)
+    print(" 4.2 資料增強：各 ρ 的 mean±std(%)  [每 seed best-lr → over 5 seeds；ρ=100 為 seed42]")
+    print("=" * width)
+    print(f"{'ρ(%)':>6} | " + " ".join(f"{lb:>{CW}}" for lb in labels))
+    print("-" * width)
+    for rho in sorted(plot_rhos):
+        r = str(float(rho))
+        cells = []
+        for k in keys:
+            if rho == 100.0 and sp_idx is not None:
+                d = all_data_list[sp_idx]
+                if k in d and r in d[k]:
+                    m, _, vals = get_representative_acc(d[k][r], only_lr)
+                    cells.append(f"{m*100:5.2f}±{_sstd(vals)*100:4.2f}" if m is not None else "—")
+                else:
+                    cells.append("—")
+            else:
+                accs = []
+                for d in all_data_list:
+                    if k in d and r in d[k]:
+                        m, _, _ = get_representative_acc(d[k][r], only_lr)
+                        if m is not None:
+                            accs.append(m)
+                cells.append(f"{np.mean(accs)*100:5.2f}±{_sstd(accs)*100:4.2f}" if accs else "—")
+        print(f"{rho:>6g} | " + " ".join(f"{c:>{CW}}" for c in cells))
+    print("=" * width + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--json_paths', type=str, nargs='+',
@@ -363,9 +409,8 @@ def main():
     else:
         print(f"LR mode: best LR per run (default)")
 
-    print_stats(all_data_list, args.json_paths, aug_configs,
-                filter_rhos=args.portions, only_lr=args.only_lr,
-                presented_keys=args.presented_keys)
+    print_summary_table(all_data_list, args.json_paths, aug_configs,
+                        args.presented_keys, args.plot_rhos, args.only_lr)
     plot(all_data_list, aug_configs, json_paths=args.json_paths, save_path=args.save, only_lr=args.only_lr,
          presented_keys=args.presented_keys, plot_rhos=args.plot_rhos, plot_xticks=args.plot_xticks)
 

@@ -48,7 +48,7 @@ def print_portion_table(series, order, all_portions):
         return
     CW = 16
     print("\n" + "=" * 82)
-    print(" 4.3 portion curve  —  格子 = mean±std(%) (n)，best downstream lr per ρ、跨 seed pool")
+    print(" 4.3 portion curve  —  格子 = mean±std(%) (n)，每 seed 取自己 best-lr → mean/std over seeds")
     print("=" * 82)
     header = f"{'ρ(%)':>6} | " + " ".join(f"{labels[k]:<{CW}}" for k in order)
     print(header)
@@ -59,7 +59,7 @@ def print_portion_table(series, order, all_portions):
             d = series[k][0]
             if p in d:
                 m, s, lr, n = d[p]
-                cells.append(f"{m:.1f}±{s:.1f} ({n})".ljust(CW))
+                cells.append(f"{m:.2f}±{s:.2f} ({n})".ljust(CW))
             else:
                 cells.append("—".center(CW))
         print(f"{p:>6g} | " + " ".join(cells))

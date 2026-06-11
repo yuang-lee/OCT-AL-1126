@@ -94,6 +94,10 @@ Table 4-2 四欄狀態：
 - **初始步 ρ=2.5% 的 lr**：與 Random baseline 一致——用該 **seed 在 cold-start(θ²) 的 best-lr**（同 seed→同 2.5% 子集，故 AL 起點 = Random 起點）。各 seed 差很多（10→5e-5, 24→1e-4, 38→5e-5, 42→5e-4），所以必須 per-seed。後續 ρ>2.5% 才 sweep（AL 選樣改變 → optimal lr 不同）。seed57 cold-start 無 2.5% → 退回 sweep。`run_AL.py: coldstart_best_lr()`。
 - **每 portion 不重複 3 次**：sweep 內每個 lr 訓練一次；變異來自 5 個 seed。
 - **Random/passive baseline**：`--AL_strategy random`（已加為合法策略，每步隨機選），跟其他策略同協定一起跑。
+- **全論文彙整慣例（2026-06-10，user 定）= per-seed best-lr → mean±std over seeds**：每個 seed 先以「**該 seed 自己 runs 的平均**」挑出自己的 best lr，得每 seed 一個 representative acc，再對 seeds 取 mean/std。4.2/4.3/4.4 **是同一個方法**，只差每 seed 的 run 數（4.2/4.3 約 3 runs→用 3-run 平均挑 lr；4.4 現在 1 run→就是該單跑）。**不是 pooled**（把所有 seed 的 runs 合併挑單一 lr）。per-seed 比 pooled 樂觀略高（例：coreset ρ=12.5 per-seed=77.1 vs pooled=74.9）。
+  - 程式狀態（皆 ✅ per-seed-best，2026-06-10 統一）：4.2 `data_aug/plot_all.py`（Cross-JSON；terminal = `print_summary_table`）；4.3 `aggregate_results.py::pool_seed_files()`（已改寫成 per-seed-best）→ `plot_portion_curve.py` / Table 4-2 同步；4.4 `plot_al_curve.py::_per_seed_best_curve()`。
+  - 改動後 4.3 數字略升（per-seed > pooled），例 θ²：ρ=5 63.4→64.5、ρ=30 83.8→84.5（seed 一致或單 seed 的點不變）。heatmap(`plot_simclr_heatmap.py`)本來就是 per-seed（per seed selected-lr → over seeds），不受影響。
+  - **std 一律 ddof=1（樣本標準差，2026-06-10 統一）**：4.2/4.3/4.4 的表格與圖 std 帶都用 ddof=1（5 個 seed 是樣本、估計母體變異）。4.2 原本是 ddof=0 已改（`plot_all.py::_sstd`）。**ρ=100（單 seed，seed-independent）**：std 改用「該 seed best-lr 的 runs」的 ddof=1（`pool_seed_files` 單 seed 分支 + 4.2 SPECIAL_RHO_100），故 4.2 4x 與 4.3 θ_ImageNet 在 ρ=100 也一致（≈±1.0，非 0）。
 - **labeled id 匯出**：每 portion 的 selected/cumulative + lrs_swept 存到 `AL_simclr/labeled_ids/{strategy}_seed{seed}_bs16.json`（reproduce + Ch5 視覺化）。
 - **執行**：`thesis/chapter_4/run_4_4_active_learning.sh`（6 策略 random+conf+entropy+margin+coreset+badge × 5 seeds，θ² best ckpt 初始化）。畫圖：`thesis/chapter_4/plot_al_curve.py`（Random 灰虛線 + 5 策略，2.5 interval）。
 - ⚠️ 現有 `AL_simclr/*.json` 是**舊資料**（seed42、固定 lr、舊 ckpt）→ 依新協定**重跑**。

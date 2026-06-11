@@ -51,20 +51,41 @@ GROUPS = [
 ]
 
 
+def _per_seed_best_curve(by_portion, portions_filter=None):
+    """彙整慣例（與 per-seed 表格一致）：
+    每個 seed 先挑「自己的 best lr」（該 seed 各 lr 的 run 平均取最大），得每 seed 一個 acc；
+    再對「seeds」取 mean±std。注意：這不是把所有 seed 的 run 合併挑單一 lr（那是 pooled）。
+    by_portion: {portion(float): {seed: {lr: [runs]}}} → {portion: (mean%, std%)}。"""
+    out = {}
+    for p, seeds in by_portion.items():
+        if portions_filter is not None and p not in portions_filter:
+            continue
+        accs = []
+        for lrd in seeds.values():
+            cand = [np.mean(_acc_list(v)) for v in lrd.values() if _acc_list(v)]
+            if cand:
+                accs.append(max(cand) * 100.0)        # 該 seed 的 best-lr acc
+        if accs:
+            std = float(np.std(accs, ddof=1)) if len(accs) > 1 else 0.0
+            out[p] = (float(np.mean(accs)), std)       # mean±std over seeds
+    return out
+
+
 def pool_strategy(strat, aug):
     if not os.path.isdir(AL_DIR):
         return {}
-    pooled = {}
+    by_portion = {}   # portion -> {seed: {lr:[runs]}}
     for f in os.listdir(AL_DIR):
         if not f.endswith(".json") or "copy" in f or f.split("_seed")[0] != strat:
             continue   # 用 _seed 切，避免 'cluster_margin' 被 '_' 切錯
+        m = re.search(r"seed(\d+)", f)
+        seed = m.group(1) if m else f
         d = json.load(open(os.path.join(AL_DIR, f)))
         if aug not in d:
             continue
         for p, lrd in d[aug].items():
-            for lr, v in lrd.items():
-                pooled.setdefault(float(p), {}).setdefault(lr, []).extend(_acc_list(v))
-    return best_lr_per_portion(pooled)
+            by_portion.setdefault(float(p), {})[seed] = lrd
+    return _per_seed_best_curve(by_portion)
 
 
 # Random baseline 只畫有跑完整的 portion（含 2.5；15/25/35/45/55 未跑完整，跳過）
@@ -72,20 +93,30 @@ RANDOM_PORTIONS = {2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0}
 
 
 def random_baseline(aug):
-    """Random(passive) baseline = θ² cold-start（隨機選子集）。
-    2.5/10/100 等多 seed 點用 per-cfg pool；其餘（5,20,...,60）用 seed42 彙整檔。"""
+    """Random(passive) baseline = θ² cold-start（隨機選子集），同樣用 per-seed best-lr → mean over seeds。
+    2.5/10/100 等多 seed 點用 per-cfg 檔；其餘（5,20,...,60）用 seed42 彙整檔。"""
     cs = os.path.join(EXP, "cold_start_simclr")
-    out = {}
+    cfg = "simclr_lr0.0002_simclr_bs256_simclr_ep500"
+    by_portion = {}   # portion -> {seed: {lr:[runs]}}
     # 來源1：seed42 彙整檔（有 5,15,20,...,70，但無 2.5）
     f = os.path.join(cs, "random42_bs16.json")
     if os.path.isfile(f):
         d = json.load(open(f))
         if aug in d:
-            out.update({p: v for p, v in best_lr_per_portion(d[aug]).items() if p in RANDOM_PORTIONS})
-    # 來源2：best-cfg 多 seed（含 2.5）→ 優先覆蓋
-    st2 = pool_seed_files(cs, lambda fn: "simclr_lr0.0002_simclr_bs256_simclr_ep500" in fn, aug)
-    out.update({p: v for p, v in st2.items() if p in RANDOM_PORTIONS})
-    return out
+            for p, lrd in d[aug].items():
+                by_portion.setdefault(float(p), {})["42"] = lrd
+    # 來源2：best-cfg per-seed 檔（含 2.5/10/100 多 seed）→ 覆蓋/補上
+    for fn in os.listdir(cs):
+        if cfg not in fn or not fn.endswith(".json"):
+            continue
+        m = re.search(r"random(\d+)", fn)
+        seed = m.group(1) if m else fn
+        d = json.load(open(os.path.join(cs, fn)))
+        if aug not in d:
+            continue
+        for p, lrd in d[aug].items():
+            by_portion.setdefault(float(p), {})[seed] = lrd
+    return _per_seed_best_curve(by_portion, portions_filter=RANDOM_PORTIONS)
 
 
 def _fmt_lr(lr):
@@ -157,13 +188,13 @@ def print_per_seed_tables(aug):
             for s in seeds:
                 hit = data[strat][s].get(p)
                 if hit:
-                    cells.append(f"{hit[0]:4.1f} ({_fmt_lr(hit[1])})".ljust(CW))
+                    cells.append(f"{hit[0]:.2f} ({_fmt_lr(hit[1])})".ljust(CW))
                     accs.append(hit[0])
                 else:
                     cells.append("—".center(CW))
             mean_s = float(np.mean(accs)) if accs else float("nan")
             std_s = float(np.std(accs, ddof=1)) if len(accs) > 1 else 0.0
-            agg = f" ‖ {mean_s:>6.1f} {std_s:>5.1f}" if accs else f" ‖ {'—':>6} {'—':>5}"
+            agg = f" ‖ {mean_s:>6.2f} {std_s:>5.2f}" if accs else f" ‖ {'—':>6} {'—':>5}"
             print(f"{p:>6.1f} | " + " ".join(cells) + agg)
     print("=" * 78 + "\n")
 

@@ -48,6 +48,8 @@ def parse_arguments():
                         help='Enable online ColorJitter augmentation on training set')
     parser.add_argument('--jitter_brightness', type=float, default=0.3,
                         help='ColorJitter brightness range (default: 0.3)')
+    parser.add_argument('--save_history', type=str, default=None,
+                        help='存學習曲線 JSON（含 epoch0=訓練前 + 每 step train loss + 每 epoch val）')
     parser.add_argument('--jitter_contrast', type=float, default=0.3,
                         help='ColorJitter contrast range (default: 0.3)')
 
@@ -176,6 +178,15 @@ def main():
         'hard': (7, '../ds/classification/seven_class')
     }
     num_classes, data_dir = task_config[args.task_type]
+    # data_dir 預設 '../ds/...'（假設從 classification/ 跑）；若不存在（如從 repo 根直接跑），
+    # 改用相對 repo 根的絕對路徑，cwd 無關。
+    if not os.path.isdir(data_dir):
+        _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(_repo_root, data_dir.replace('../', '', 1))
+    # SimCLR ckpt 目錄同理（預設 '../SSL/simclr/ckpt'，從 repo 根跑會找不到）
+    if not os.path.isdir(args.simclr_base_dir):
+        _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        args.simclr_base_dir = os.path.join(_repo_root, args.simclr_base_dir.replace('../', '', 1))
     
     # Fix batch size to 16
     args.batch_size = 16
@@ -211,7 +222,8 @@ def main():
                              cold_start_subdir(args.pretrained_weights, args.simclr_init))
     file_path = os.path.join(save_path, file_name)
     print(f"\nChecking existing results...")
-    check_existing_results(file_path, aug_key, portion_key, lr_key, max_runs=3)
+    if not args.save_history:    # 學習曲線診斷模式：不被既有 3-runs 擋住
+        check_existing_results(file_path, aug_key, portion_key, lr_key, max_runs=3)
     print(f"Check passed. Proceeding with training...\n")
     # =================================================
     
@@ -326,14 +338,26 @@ def main():
     print(f'{"Trainable Params":<20}: {total_trainable_params / 1e6:.2f}M')
     print('=' * 50)
 
+    hist = {} if args.save_history else None
     _, final_acc, _ = train_model(
         model, args.device, data_loaders, dataset_sizes,
-        criterion, optimizer_, lr_scheduler_, num_epochs=args.epoch
+        criterion, optimizer_, lr_scheduler_, num_epochs=args.epoch, history_out=hist
     )
-    
+
     final_acc = round(final_acc, 4)
     print(f"Final Acc: {final_acc}")
-    
+
+    # 學習曲線 JSON（epoch0=訓練前 + 每 step train loss + 每 epoch val）；init 標 simclr_{random|imagenet}
+    if args.save_history:
+        os.makedirs(os.path.dirname(args.save_history) or '.', exist_ok=True)
+        with open(args.save_history, 'w', encoding='utf-8') as f:
+            json.dump({"meta": {"init": f"simclr_{args.simclr_init}", "task_type": args.task_type,
+                                "portion": args.portion, "seed": args.seed, "lr": args.lr,
+                                "epoch": args.epoch, "aug_key": aug_key}, **hist}, f)
+        print(f'[save_history] 學習曲線已存到: {args.save_history}')
+        print('[save_history] 略過結果 JSON 寫入。')
+        return
+
     # Optional save model
     if args.ask_saving:
         user_input = input('Do you want to save the model checkpoint? (y/n): ').strip().lower()

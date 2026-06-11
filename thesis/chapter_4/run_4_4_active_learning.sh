@@ -16,6 +16,8 @@
 #     DEVICE=cuda:0 ./thesis/chapter_4/run_4_4_active_learning.sh
 #   只跑部分策略/seeds（可分卡並行）：
 #     DEVICE=cuda:0 STRATEGIES="entropy margin" SEEDS="42 10" ./thesis/chapter_4/run_4_4_active_learning.sh
+#   重跑安全：若 {strategy}_seed{seed}_bs16.json 已存在（不論跑完與否）會自動跳過；
+#   要強制重跑（接續/覆蓋既有 JSON）加 FORCE=1。
 #   檢視：python3 thesis/chapter_4/aggregate_results.py    （AL 區塊）
 # =============================================================================
 set -e
@@ -34,6 +36,12 @@ PORTION_INTERVAL=${PORTION_INTERVAL:-2.5}
 
 for strat in $STRATEGIES; do
   for seed in $SEEDS; do
+    result_json="$EXP_PATH/classification_hard/AL_simclr/${strat}_seed${seed}_bs16.json"
+    if [ -f "$result_json" ] && [ "${FORCE:-0}" != "1" ]; then
+      echo "!! existing file already exists, skip run: $result_json"
+      echo "   (不論是否跑完所有 portion 都跳過；要強制重跑請加 FORCE=1)"
+      continue
+    fi
     echo "============================================================"
     echo "AL: strategy=$strat  seed=$seed  (sweep lr, best-val model selects)"
     echo "============================================================"

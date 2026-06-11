@@ -40,6 +40,10 @@ def parse_arguments():
                         help='ColorJitter brightness range (default: 0.3)')
     parser.add_argument('--jitter_contrast', type=float, default=0.3,
                         help='ColorJitter contrast range (default: 0.3)')
+    parser.add_argument('--save_ckpt', type=str, default=None,
+                        help='非互動：訓練後把 model.state_dict() 存到此路徑（GradCAM 等用途）')
+    parser.add_argument('--save_history', type=str, default=None,
+                        help='存學習曲線 JSON 到此路徑（含 epoch0=訓練前 + 每 step train loss + 每 epoch val）')
 
     return parser.parse_args()
 
@@ -139,7 +143,12 @@ def main():
         'hard': (7, '../ds/classification/seven_class')
     }
     num_classes, data_dir = task_config[args.task_type]
-    
+    # data_dir 預設 '../ds/...'（假設從 classification/ 跑）；若該相對路徑不存在
+    # （例如從 repo 根直接跑此檔，如 GradCAM 訓練），改用相對 repo 根的絕對路徑，cwd 無關。
+    if not os.path.isdir(data_dir):
+        _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(_repo_root, data_dir.replace('../', '', 1))
+
     # Fix batch size to 16
     args.batch_size = 16
     
@@ -169,7 +178,8 @@ def main():
     save_path = os.path.join(args.exp_path, f"classification_{args.task_type}", f"cold_start_{args.pretrained_weights}")
     file_path = os.path.join(save_path, file_name)
     print(f"\nChecking existing results...")
-    check_existing_results(file_path, aug_key, portion_key, lr_key, max_runs=3)
+    if not (args.save_ckpt or args.save_history):    # 診斷用途（GradCAM ckpt / 學習曲線）不被既有 3-runs 擋住
+        check_existing_results(file_path, aug_key, portion_key, lr_key, max_runs=3)
     print(f"Check passed. Proceeding with training...\n")
     # =================================================
     
@@ -259,14 +269,30 @@ def main():
     print(f'{"Trainable Params":<20}: {total_trainable_params / 1e6:.2f}M')
     print('-' * 50)
 
+    hist = {} if args.save_history else None
     _, final_acc, _ = train_model(
         model, args.device, data_loaders, dataset_sizes,
-        criterion, optimizer_, lr_scheduler_, num_epochs=args.epoch
+        criterion, optimizer_, lr_scheduler_, num_epochs=args.epoch, history_out=hist
     )
-    
+
     final_acc = round(final_acc, 4)
     print(f"Final Acc: {final_acc}")
-    
+
+    # 學習曲線 JSON（epoch0=訓練前 + 每 step train loss + 每 epoch val）
+    if args.save_history:
+        os.makedirs(os.path.dirname(args.save_history) or '.', exist_ok=True)
+        with open(args.save_history, 'w', encoding='utf-8') as f:
+            json.dump({"meta": {"init": args.pretrained_weights, "task_type": args.task_type,
+                                "portion": args.portion, "seed": args.seed, "lr": args.lr,
+                                "epoch": args.epoch, "aug_key": aug_key}, **hist}, f)
+        print(f'[save_history] 學習曲線已存到: {args.save_history}')
+
+    # 非互動存檔（給 GradCAM 等用）：指定 --save_ckpt 就直接存
+    if args.save_ckpt:
+        os.makedirs(os.path.dirname(args.save_ckpt) or '.', exist_ok=True)
+        torch.save(model.state_dict(), args.save_ckpt)
+        print(f'[save_ckpt] state_dict 已存到: {args.save_ckpt}')
+
     # Optional save model
     if args.ask_saving:
         user_input = input('Do you want to save the model checkpoint? (y/n): ').strip().lower()
@@ -287,6 +313,9 @@ def main():
             print('Model checkpoint not saved.')
     
     # Save results
+    if args.save_ckpt or args.save_history:    # 診斷用途：略過結果 JSON 寫入，以免污染實驗資料
+        print('[診斷模式 save_ckpt/save_history] 略過結果 JSON 寫入。')
+        return
     save_path = os.path.join(args.exp_path, f"classification_{args.task_type}", f"cold_start_{args.pretrained_weights}")
     os.makedirs(save_path, exist_ok=True)
     file_path = os.path.join(save_path, file_name)
