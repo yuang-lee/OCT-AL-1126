@@ -136,17 +136,23 @@ def plot_one(curve_dir, portion, out, stride=10, smooth_train=9, smooth_epoch=3)
         for s in ax.spines.values():
             s.set_linewidth(1.5)
 
+    # 三張圖（10/30/100%）共用同一 y 軸範圍與刻度，方便跨 portion 直接對比
+    axA.set_ylim(0.0, 2.0); axA.set_yticks([0.0, 0.5, 1.0, 1.5, 2.0])      # (a) train loss
+    axB.set_ylim(0.0, 3.0); axB.set_yticks([0, 1, 2, 3])                   # (b) val loss
+    axC.set_ylim(0, 100);   axC.set_yticks([0, 20, 40, 60, 80, 100])      # (c) test acc
+
     # legend：統一獨立畫在大圖最上方一排
     fig.legend(handles=handles, loc="upper center", ncol=len(present),
                fontsize=FONT_LEGEND, frameon=True, edgecolor="0.7",
-               bbox_to_anchor=(0.5, 0.97), columnspacing=2.2, handlelength=2.4)
+               bbox_to_anchor=(0.5, 1.0), columnspacing=2.2, handlelength=2.4)
 
     os.makedirs(os.path.dirname(out), exist_ok=True)
     fig.savefig(out, dpi=300, facecolor="white")
     plt.close(fig)
-    nseeds = {p: len(data[p]) for p, _, _ in present}
-    print(f"  saved -> {out}  ({len(present)}/4 inits; seeds per init: "
-          + ", ".join(f"{p}={n}" for p, n in nseeds.items()) + ")")
+    nrep = {p: len(data[p]) for p, _, _ in present}
+    word = "runs" if str(portion) == "100" else "seeds"   # ρ=100 是同 seed42 多 run，非多 seed
+    print(f"  saved -> {out}  ({len(present)}/4 inits; {word} per init: "
+          + ", ".join(f"{p}={n}" for p, n in nrep.items()) + ")")
 
 
 def main():

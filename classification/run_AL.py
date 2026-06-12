@@ -77,6 +77,10 @@ def parse_arguments():
     parser.add_argument('--coldstart_ref', type=str,
                         default='./classification/exp_results/classification_hard/cold_start_simclr/random42_bs16.json',
                         help="coldstart 模式用：theta^2 cold-start result json（path relative to repo root）。")
+    parser.add_argument('--coldstart_lr_path', type=str, default=None,
+                        help="sweep 模式初始步查 per-seed cold-start best lr 的根目錄；預設用 --exp_path。"
+                             "結果寫到隔離 exp_path（如 b₀ ablation）時，指向真正的 ./classification/exp_results，"
+                             "初始 b₀ 步即可沿用 random 在該 portion 的 best lr（初始池=random 同子集），免重掃。")
     parser.add_argument('--weight_decay', type=float, default=None)
     parser.add_argument('--no_data_aug', dest='data_aug', action='store_false', default=True)
     parser.add_argument('--aug_factor', type=int, default=4)   
@@ -305,7 +309,8 @@ def main():
             if portion == args.portion_start:
                 # 初始步：與 Random baseline 一致 → 用該 seed 在此 portion 的 cold-start best lr（不重掃）。
                 # 後續 portion 因 AL 選樣改變 labeled set，optimal lr 會不同 → 自己 sweep。
-                blr = coldstart_best_lr(args.seed, portion, args.exp_path, args.task_type, aug_key)
+                blr = coldstart_best_lr(args.seed, portion, args.coldstart_lr_path or args.exp_path,
+                                        args.task_type, aug_key)
                 if blr:
                     cand_lrs = [blr]
                     print(f'初始 ρ={portion}%：用 θ² cold-start seed{args.seed} best lr={blr}（與 Random 一致，不掃）')

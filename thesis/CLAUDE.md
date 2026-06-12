@@ -92,6 +92,7 @@ Table 4-2 四欄狀態：
   - 為此 `train_eval.py` 的 `train_model` 多回傳第 3 值 `best_val_loss`（caller run_first_iter*.py 已改成忽略）。
   - 其他模式：`coldstart`（單一查表 lr，option B）、`fixed`（單一 --lr）。
 - **初始步 ρ=2.5% 的 lr**：與 Random baseline 一致——用該 **seed 在 cold-start(θ²) 的 best-lr**（同 seed→同 2.5% 子集，故 AL 起點 = Random 起點）。各 seed 差很多（10→5e-5, 24→1e-4, 38→5e-5, 42→5e-4），所以必須 per-seed。後續 ρ>2.5% 才 sweep（AL 選樣改變 → optimal lr 不同）。seed57 cold-start 無 2.5% → 退回 sweep。`run_AL.py: coldstart_best_lr()`。
+  - **`--coldstart_lr_path`（2026-06-12 加，backward-compat，預設沿用 `--exp_path`）**：把「初始步查 per-seed cold-start best-lr」的根目錄與「寫結果」的 `--exp_path` 解耦。用途＝結果寫到隔離樹（如 Ch5 b₀ ablation 的 `ch5_b0_ablation/b0_<B0>/`）時，仍能去**真** cold-start 樹（`./classification/exp_results`）查初始 lr，免重掃。主 4.4 不傳此參數、行為不變。Ch5 `run_5_1_b0_ablation.sh` 會自動帶（初始 b₀ 池＝該 seed random 子集 → 用 cold-start(b₀,seed) best-lr）。
 - **每 portion 不重複 3 次**：sweep 內每個 lr 訓練一次；變異來自 5 個 seed。
 - **Random/passive baseline**：`--AL_strategy random`（已加為合法策略，每步隨機選），跟其他策略同協定一起跑。
 - **全論文彙整慣例（2026-06-10，user 定）= per-seed best-lr → mean±std over seeds**：每個 seed 先以「**該 seed 自己 runs 的平均**」挑出自己的 best lr，得每 seed 一個 representative acc，再對 seeds 取 mean/std。4.2/4.3/4.4 **是同一個方法**，只差每 seed 的 run 數（4.2/4.3 約 3 runs→用 3-run 平均挑 lr；4.4 現在 1 run→就是該單跑）。**不是 pooled**（把所有 seed 的 runs 合併挑單一 lr）。per-seed 比 pooled 樂觀略高（例：coreset ρ=12.5 per-seed=77.1 vs pooled=74.9）。
@@ -115,8 +116,19 @@ Table 4-2 四欄狀態：
   - **目前決定（option A，維持現狀）**：TypiClust/Cluster-Margin 與所有策略一致——**初始 2.5% 一律 random**（同 seed→同初始池，公平比較 + 沿用 cold-start best-lr），且 TypiClust **用當前 finetuned 模型的 backbone 特徵**（非 frozen SimCLR）。Cluster-Margin 本來就需要 warm-start（margin 要有 model）。
   - **【Ch5 待探討】cold-start AL 的選擇能否「搭配其他策略」進一步提升 performance**（user 想在第五章寫）：可做的 bonus 實驗——(i) TypiClust 改用 **frozen SimCLR 特徵 + 自選初始批**（忠於原版，發揮低預算優勢）；(ii) **混合排程**：低 ρ 用 TypiClust（density）、高 ρ 切換到 uncertainty/BADGE（呼應原 paper「opposite strategies suit high/low budgets」）；(iii) 比較「random 初始 vs TypiClust 自選初始」對後續軌跡的影響。主結果仍走 option A，這些當 Ch5 深入分析。
 
-### 4.5 綜合比較各項策略 — ⚠️ 依賴 4.2–4.4
-彙整 aug / SSL / AL 三策略於同一張圖。待 4.3、4.4 補齊多 seed 後產出。
+### 4.5 綜合比較各項策略 — factor ablation（設計定案 2026-06-12，待跑 4 arm）
+**目的**：4.2–4.4 是逐一疊加（AL 只做在 aug4+θ² 上）；4.5 拆解 Aug(4x)／Init(θ²)／AL 三策略**各自**貢獻。
+- **兩個 Table，rows ρ=10/30/50%**：Table 1 一次只開一個（Data Aug | Weight Init | AL | All Three）；Table 2 一次只關一個（w/o 各項 | All Three）。「關」= no_aug / ImageNet / passive random。
+- **AL 代表策略 = `margin`（user 定案 2026-06-12：4.4 所有方法中最好）**。要換策略時三個 AL arm 加 `STRATEGY=xxx` 重跑（檔名含策略名可並存；init_only 與策略無關）。
+- **7 cell 對照（Aug, Init, AL）**：3 個用主實驗既有資料——aug_only=(aug4,ImageNet,✗)=4.2、wo_al=(aug4,θ²,✗)=4.3 θ² best cfg、all_three=(aug4,θ²,margin)=4.4；另外 (no_aug,ImageNet,✗) 全關 baseline 也已在 4.2 的 `no_aug` key（aggregate 會印參考列）。**待跑 4 arm**：
+  - `init_only`=(no_aug,θ²,✗)：cold-start **只跑 ρ=10/30/50** 三點，5 seeds×3 runs，lr 網格沿用 4.3 精簡版。
+  - `al_only`=(no_aug,ImageNet,margin)、`wo_aug`=(no_aug,θ²,margin)、`wo_init`=(aug4,ImageNet,margin)：AL 軌跡 **ρ=2.5→50（interval 2.5，20 點）**，同 4.4 option A（sweep `3e-5 5e-5 1e-4 3e-4`、每 lr 1 run、best-val 選取器、5 seeds）。
+- **結果隔離（重要，user 要求勿與主實驗混）**：全部存 `classification/exp_results/chapter4_5_ablation/{arm}/classification_hard/...`（靠 `--exp_path` 分樹，程式零修改）。
+- **執行**：`ARM=init_only|al_only|wo_aug|wo_init DEVICE=cuda:N [SEEDS=...] ./thesis/chapter_4/run_4_5_ablation.sh`。重跑安全：AL arm 對已存在 (strategy,seed) JSON 跳過（`FORCE=1` 接續）；cold-start arm 由 check_existing_results（3 runs 滿）擋。
+- **檢視**：`python3 thesis/chapter_4/aggregate_4_5.py`（直接印兩個 Table + 全關 baseline，per-seed best-lr → mean±std ddof=1，缺 cell 標 NA）。
+- ⚠️ **協定微差（已知、可接受）**：新 AL arm 的初始 2.5% 在獨立 exp_path 查不到 cold-start 參照 → 一律退回 sweep；all_three（4.4 主跑）2.5% 用 per-seed cold-start best-lr。三個新 arm 內部一致，論文不需提。
+- ⚠️ lr 網格各 cell 沿用其「家族」慣例（4.2 寬網格 / 4.3 精簡網格 / 4.4 sweep 網格），跨 cell 不完全相同——與 4.2–4.4 主結果同一狀況，比較時心裡有數即可。
+- 現況（2026-06-12 aggregate 實測）：3 個既有 cell 有數字（all_three@50 暫 n=4，等 4.4 margin 跑完）；4 個新 arm 全 NA 待跑。
 
 ---
 

@@ -147,6 +147,7 @@ DEVICE=cuda:5 STRATEGIES="cluster_margin" SEEDS="57" ./thesis/chapter_4/run_4_4_
 DEVICE=cuda:1 STRATEGIES="cluster_margin" SEEDS="42" ./thesis/chapter_4/run_4_4_active_learning.sh # 已下
 
 python3 thesis/chapter_4/plot_al_curve.py
+python3 thesis/chapter_4/al_curve_each_best.py
 ```
 
 - **可用策略（8 個）**：`random conf entropy margin coreset badge` + 新增 **`typiclust`**（Diversity，低預算 SOTA，低 ρ 可能贏過現有）與 **`cluster_margin`**（Hybrid，比 BADGE 輕、效果相近的對照）。跑法相同：
@@ -159,6 +160,42 @@ python3 thesis/chapter_4/plot_al_curve.py
   結構：`{portion: {lrs_swept, n_cumulative, selected, cumulative}}`（reproduce + Ch5 視覺化）。
 - lr 用 **val（非 test）**挑最佳 → 避免 test leakage（`train_model` 多回傳 best_val_loss）。
 - ⚠️ 舊 AL 資料已備份到 `AL_simclr_old/`（buggy coreset/badge + 舊 ckpt）；新跑會建乾淨的 `AL_simclr/`。
+
+---
+
+## F. 4.5 綜合比較（factor ablation）— Aug × Init × AL 各自貢獻
+
+目的：4.2–4.4 是「逐一疊加」策略（AL 只在有 aug4 + θ² 的情況下做過）；4.5 拆解三策略**各自**的影響量。
+兩個 Table（rows ρ = 10 / 30 / 50%；AL 代表策略 = **margin**，4.4 所有方法中最好、已定案 2026-06-12）：
+- **Table 1（一次只開一個）**：Data Aug (4x) | Weight Init (θ²) | AL (margin) | All Three
+- **Table 2（一次只關一個）**：w/o Data Aug | w/o Weight Init | w/o AL | All Three
+
+「關」的定義：Aug 關 = no_aug；Init 關 = ImageNet；AL 關 = passive random（cold-start）。
+7 個 cell 中 3 個直接用主實驗既有資料（aug_only=4.2、wo_al=4.3 θ²、all_three=4.4 margin），
+只需新跑 4 個 arm，結果**隔離**在 `classification/exp_results/chapter4_5_ablation/{arm}/`（勿與主實驗混）。
+
+```bash
+# cold-start arm（最便宜：只跑 ρ=10/30/50 三點 × 5 seeds × 3 runs × lr 網格；MAX_PAR 並行）
+ARM=init_only DEVICE=cuda:0 ./thesis/chapter_4/run_4_5_ablation.sh
+
+# 三條 AL 軌跡（margin，ρ=2.5→50、interval 2.5、5 seeds；可用 SEEDS 拆卡並行）
+ARM=al_only  DEVICE=cuda:1 ./thesis/chapter_4/run_4_5_ablation.sh   # no_aug + ImageNet + margin
+ARM=wo_aug   DEVICE=cuda:2 ./thesis/chapter_4/run_4_5_ablation.sh   # no_aug + θ²       + margin
+ARM=wo_init  DEVICE=cuda:3 ./thesis/chapter_4/run_4_5_ablation.sh   # aug4   + ImageNet + margin
+
+# 檢視兩個 Table（缺 cell 標 NA；另印「三策略全關」參考 baseline）
+python3 thesis/chapter_4/aggregate_4_5.py
+```
+
+注意事項：
+- **lr/seed/runs 慣例與主實驗對齊**：cold-start arm 用 4.3 的 per-portion lr 網格 × 3 runs；
+  AL arm 用 4.4 option A（sweep `3e-5 5e-5 1e-4 3e-4`、每 lr 1 run、best-val 選取器）；皆 5 seeds（10 24 38 42 57）。
+- AL arm 的**初始 2.5% 一律 sweep**（獨立 exp_path 下查不到 cold-start best-lr 參照）——三個新 AL
+  arm 內部一致；與 all_three（4.4 主跑，2.5% 用 cold-start best-lr）有此微小差異，論文不需提。
+- **重跑安全**：AL arm 的 (strategy,seed) JSON 已存在就跳過（`FORCE=1` 強制接續）；
+  cold-start arm 由 `check_existing_results`（3 runs 滿）自動跳過。
+- 要換 AL 代表策略：三個 AL arm 加 `STRATEGY=xxx` 重跑即可（檔名含策略名、可並存；
+  `aggregate_4_5.py --strategy xxx` 對應檢視；init_only 與策略無關不用重跑）。
 
 ---
 
@@ -391,6 +428,7 @@ python3 thesis/gradcam/gradcam_panels.py --device cuda:8 --images \
 | θ²_SimCLR（含熱力圖） | `.../cold_start_simclr/` |
 | θ¹_SimCLR | `.../cold_start_simclr_randinit/`（新增，A 步驟產生）|
 | 主動學習 | `.../AL_simclr/` |
+| 4.5 factor ablation（F 步驟） | `classification/exp_results/chapter4_5_ablation/{init_only,al_only,wo_aug,wo_init}/` |
 | SimCLR checkpoints | `SSL/simclr/ckpt/`（`.pkl`，不進 git）|
 | GradCAM ckpt / 圖 | `thesis/gradcam/ckpt/`（`.pth`，不進 git）/ `thesis/gradcam/out/` |
 
@@ -404,6 +442,17 @@ DEVICE=cuda:8 ./thesis/chapter_4/run_4_3_learning_curve_simclr.sh      # θ¹ + 
 
 DEVICE=cuda:7 ./thesis/chapter_4/run_4_3_learning_curve_baselines_s10.sh   # random + imagenet
 DEVICE=cuda:7 ./thesis/chapter_4/run_4_3_learning_curve_simclr_s10.sh      # θ¹ + θ²
+
+
+DEVICE=cuda:0 ./thesis/chapter_4/run_4_3_learning_curve_baselines_s24.sh   # random + imagenet
+DEVICE=cuda:7 ./thesis/chapter_4/run_4_3_learning_curve_simclr_s24.sh      # θ¹ + θ²
+
+DEVICE=cuda:7 ./thesis/chapter_4/run_4_3_learning_curve_baselines_s38.sh
+DEVICE=cuda:7 ./thesis/chapter_4/run_4_3_learning_curve_simclr_s38.sh
+
+
+DEVICE=cuda:0 ./thesis/chapter_4/run_4_3_learning_curve_baselines_s57.sh
+DEVICE=cuda:9 ./thesis/chapter_4/run_4_3_learning_curve_simclr_s57.sh
 
 
 DEVICE=cuda:0 ./thesis/chapter_4/run_4_3_learning_curve_p100_runs.sh
