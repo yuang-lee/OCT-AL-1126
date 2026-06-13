@@ -19,12 +19,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
-from plot_b0_ablation import (pool_strategy_dir, per_seed_dir, _lighten, METHOD, DISPLAY, BASE)
+from plot_b0_ablation import (pool_strategy_dir, per_seed_dir, PALETTE, MSIZE,
+                              METHOD, DISPLAY, BASE)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "chapter_4"))
 from plot_al_curve import random_baseline, style_ax, FONT_LABEL, _fmt_lr
 
-# (b, marker, lighten)：b=2.5 = 4.4 原樣（marker=None→用方法 4.4 marker, 原色）；其餘漸淺 + 非衝突 marker。
-BVARIANTS = [("2.5", None, 0.00), ("5", "p", 0.30), ("10", "h", 0.55)]
+# (b, marker, idx)：b=2.5 = 4.4 原樣（marker=None→方法 4.4 marker、原色）。
+# marker 依 index：0=方法 marker、1=○、2=△、3=✚（圓/三角/十字 彼此差很大，可同時容納三~四種 variant 不混淆）。
+BVARIANTS = [("2.5", None, 0.00), ("5", "o", 0.40), ("10", "^", 0.70), ("20", "P", 1.00)]
 
 
 def b_dir(b):
@@ -95,19 +97,20 @@ def plot_method(method, aug, out_dir):
             print_per_seed(method, b, per_seed_dir(b_dir(b), method, aug))
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    for b, mk, amt in BVARIANTS:
+    pal = PALETTE.get(method, [color])
+    for i, (b, mk, amt) in enumerate(BVARIANTS):
         if b not in curves:
             continue
         marker = base_marker if mk is None else mk
-        col = color if amt == 0 else _lighten(color, amt)
+        col = pal[i] if i < len(pal) else pal[-1]            # index 0 = 4.4 原色；之後手挑色
         ps = sorted(curves[b])
         mean = np.array([curves[b][p][0] for p in ps]); std = np.array([curves[b][p][1] for p in ps])
-        ax.plot(ps, mean, marker=marker, linestyle="-", color=col, linewidth=3, markersize=9,
-                label=f"$b$={b}%")
+        ax.plot(ps, mean, marker=marker, linestyle="-", color=col, linewidth=3,
+                markersize=MSIZE.get(marker, 9), label=f"$b$={b}%")
         ax.fill_between(ps, mean - std, mean + std, color=col, alpha=0.10)
     if rb:
         ps = sorted(rb); mean = np.array([rb[p][0] for p in ps]); std = np.array([rb[p][1] for p in ps])
-        ax.plot(ps, mean, marker="X", color="#404040", linewidth=3, markersize=9,
+        ax.plot(ps, mean, marker="X", color="#404040", linewidth=3, markersize=MSIZE["X"],
                 linestyle="--", label="Random")
         ax.fill_between(ps, mean - std, mean + std, color="#404040", alpha=0.10)
     ax.axhline(y=88.2, color="black", linestyle=(0, (8, 4)), linewidth=2.2, alpha=0.85, label="Target")

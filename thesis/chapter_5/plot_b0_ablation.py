@@ -32,6 +32,16 @@ DISPLAY = {"margin": "Margin", "coreset": "Core-set", "badge": "BADGE",
            "cluster_margin": "Cluster-Margin", "conf": "Confidence", "entropy": "Entropy",
            "typiclust": "TypiClust"}
 
+# 各方法給「一組手挑、彼此明顯區隔」的同系列配色（依 b₀/b 由小到大取 index）：
+#   index 0 = 4.4 原色（最小 b₀/b 維持一模一樣）；之後每個都換色相+明度，相鄰一定分得出來。
+#   margin 藍→靛→紫→洋紅、Core-set 綠→teal→青→藍、Cluster-Margin 珊瑚紅→紅→洋紅→紫。
+PALETTE = {
+    "margin":         ["#3182BD", "#5E50C0", "#9B2FB5", "#D6217E"],
+    "coreset":        ["#238B45", "#2DD4BF", "#1D4ED8", "#7E22CE"],
+    "cluster_margin": ["#FB6A4A", "#C81E1E", "#EC4899", "#7E2FB0"],   # 珊瑚→深紅→亮粉→紫
+    "badge":          ["#A50F15", "#FB6A4A", "#EC4899", "#7E2FB0"],
+}
+
 def b0_dir(b0):
     if str(b0) == "2.5":
         return os.path.join(BASE, "classification_hard", "AL_simclr")            # 4.4 主結果
@@ -42,17 +52,31 @@ def b0_dir(b0):
 #   - marker：b₀=2.5 用該方法 4.4 marker；其餘刻意選「4.4 沒用到的形狀」(p 五邊形/h 六邊形/8 八邊形)，
 #     不與 conf(o)/margin(s)/entropy(^)/coreset(D)/typiclust(v)/badge(P)/cluster_margin(*)/random(X) 撞。
 #   - linestyle：再加不同虛實樣式。
-# 只跑 b₀ = 2.5 / 10 / 20（不跑 5）。各 b₀ 一律實線，靠「色深 + marker」區分。
+# 只跑 b₀ = 2.5 / 10 / 20（不跑 5）。各 b₀ 一律實線，靠「色 + 形狀明顯不同的 marker」區分。
+# marker 依 variant index：0=方法 4.4 marker、1=○、2=△、3=✚（圓/三角/十字 彼此差很大，不像多邊形那組相近）。
 B0S = [("2.5", None, "-", 0.00),
-       ("10", "p", "-", 0.30),
-       ("20", "h", "-", 0.55)]
+       ("10", "o", "-", 0.55),
+       ("20", "^", "-", 1.00)]
+
+# 各 marker 形狀的視覺面積不同 → 用 per-shape 尺寸讓「看起來一樣大」。
+MSIZE = {"s": 8, "D": 8.5, "P": 11, "*": 12, "o": 9.5, "^": 10, "v": 10, "X": 9,
+         "p": 10.5, "h": 10.5, "8": 10.5}
+
+
+def _hex2rgb(h):
+    h = h.lstrip("#")
+    return np.array([int(h[i:i+2], 16) for i in (0, 2, 4)]) / 255.0
 
 
 def _lighten(hexc, amt):
     """往白色混 amt（0=原色，1=白）。"""
-    h = hexc.lstrip("#")
-    rgb = np.array([int(h[i:i+2], 16) for i in (0, 2, 4)]) / 255.0
-    return tuple(rgb + (1.0 - rgb) * amt)
+    return tuple(_hex2rgb(hexc) + (1.0 - _hex2rgb(hexc)) * amt)
+
+
+def _blend(c1, c2, frac):
+    """從 c1 往 c2 線性內插 frac（0=c1 原色，1=c2）。用於同系列的色相漸變。"""
+    a, b = _hex2rgb(c1), _hex2rgb(c2)
+    return tuple(a + (b - a) * frac)
 
 
 def pool_strategy_dir(al_dir, strat, aug):
@@ -176,21 +200,23 @@ def plot_method(method, aug, out_dir):
             print_per_seed(method, b0, per_seed_dir(b0_dir(b0), method, aug))
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    for b0, mk, ls, amt in B0S:
+    pal = PALETTE.get(method, [color])
+    for i, (b0, mk, ls, amt) in enumerate(B0S):
         if b0 not in curves:
             continue
         marker = base_marker if mk is None else mk         # b₀=2.5 用 4.4 marker
-        col = color if amt == 0 else _lighten(color, amt)  # b₀=2.5 用 4.4 原色
+        col = pal[i] if i < len(pal) else pal[-1]          # index 0 = 4.4 原色；之後手挑色
+
         ps = sorted(curves[b0])
         mean = np.array([curves[b0][p][0] for p in ps])
         std = np.array([curves[b0][p][1] for p in ps])
-        ax.plot(ps, mean, marker=marker, linestyle=ls, color=col, linewidth=3, markersize=9,
-                label=f"$b_0$={b0}%")
+        ax.plot(ps, mean, marker=marker, linestyle=ls, color=col, linewidth=3,
+                markersize=MSIZE.get(marker, 9), label=f"$b_0$={b0}%")
         ax.fill_between(ps, mean - std, mean + std, color=col, alpha=0.10)
     # Random baseline（灰虛）
     if rb:
         ps = sorted(rb); mean = np.array([rb[p][0] for p in ps]); std = np.array([rb[p][1] for p in ps])
-        ax.plot(ps, mean, marker="X", color="#404040", linewidth=3, markersize=9,
+        ax.plot(ps, mean, marker="X", color="#404040", linewidth=3, markersize=MSIZE["X"],
                 linestyle="--", label="Random")
         ax.fill_between(ps, mean - std, mean + std, color="#404040", alpha=0.10)
     # Target

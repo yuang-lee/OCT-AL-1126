@@ -95,6 +95,11 @@ B=5 DEVICE=cuda:4 STRATEGIES="cluster_margin"         SEEDS="10 24" ./thesis/cha
 B=10 DEVICE=cuda:4 STRATEGIES="cluster_margin"         SEEDS="38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh
 B=5 DEVICE=cuda:4 STRATEGIES="cluster_margin"         SEEDS="38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh
 
+# 6/14: 加入b=20%的，這樣才更有望看到performance collapse!
+B=20 DEVICE=cuda:7 STRATEGIES="margin"         SEEDS="10 24 38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh
+B=20 DEVICE=cuda:6 STRATEGIES="coreset"        SEEDS="10 24 38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh
+B=20 DEVICE=cuda:1 STRATEGIES="cluster_margin" SEEDS="10 24 38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh
+
 
 python3 thesis/chapter_5/plot_b_ablation.py
 ```
