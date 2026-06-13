@@ -40,7 +40,7 @@ GROUPS = [
         ("entropy", "Entropy",    "#6BAED6", "^"),   # △
     ]),
     ("Diversity", [
-        ("coreset",   "Coreset",   "#238B45", "D"),   # ◇ 深綠
+        ("coreset",   "Core-set",  "#238B45", "D"),   # ◇ 深綠
         ("typiclust", "TypiClust", "#74C476", "v"),   # ▽ 淺綠
     ]),
     ("Hybrid", [

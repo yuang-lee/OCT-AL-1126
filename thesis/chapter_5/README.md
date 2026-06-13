@@ -51,6 +51,12 @@ B0=20 DEVICE=cuda:6 STRATEGIES="coreset" SEEDS="42" ./thesis/chapter_5/run_5_1_b
 B0=20 DEVICE=cuda:6 STRATEGIES="coreset" SEEDS="57" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
 
 
+# hybrid 改跑 cluster_margin（b₀=10、20，各 5 seeds）
+B0=10 DEVICE=cuda:9 STRATEGIES="cluster_margin" SEEDS="10 24 38 42 57" ./thesis/chapter_5/run_5_1_b0_ablation.sh
+B0=20 DEVICE=cuda:9 STRATEGIES="cluster_margin" SEEDS="10 24" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+B0=20 DEVICE=cuda:7 STRATEGIES="cluster_margin" SEEDS="38" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+B0=20 DEVICE=cuda:5 STRATEGIES="cluster_margin" SEEDS="42" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+B0=20 DEVICE=cuda:5 STRATEGIES="cluster_margin" SEEDS="57" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
 
 python3 thesis/chapter_5/plot_b0_ablation.py
 ```
@@ -68,6 +74,30 @@ python3 thesis/chapter_5/plot_b0_ablation.py
 - 機制：`run_AL.py` 新增 `--coldstart_lr_path`（指向真正的 `./classification/exp_results`），讓初始步
   的 lr 查表用真 cold-start 樹，而結果仍寫到隔離的 `ch5_b0_ablation/b0_<B0>/`。
 - 後續 ρ>b₀ 步仍走 sweep + best-val（option A）。
+
+```bash
+B=10 DEVICE=cuda:0 STRATEGIES="margin"         SEEDS="10 24" ./thesis/chapter_5/run_5_1_b_ablation.sh
+B=5  DEVICE=cuda:0 STRATEGIES="margin"         SEEDS="10 24" ./thesis/chapter_5/run_5_1_b_ablation.sh
+
+B=10 DEVICE=cuda:2 STRATEGIES="margin"         SEEDS="38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh
+B=5 DEVICE=cuda:2 STRATEGIES="margin"         SEEDS="38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh
+
+
+B=10 DEVICE=cuda:0 STRATEGIES="coreset"         SEEDS="10 24" ./thesis/chapter_5/run_5_1_b_ablation.sh
+B=5 DEVICE=cuda:0 STRATEGIES="coreset"         SEEDS="10 24" ./thesis/chapter_5/run_5_1_b_ablation.sh
+
+B=10 DEVICE=cuda:2 STRATEGIES="coreset"         SEEDS="38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh 
+B=5 DEVICE=cuda:2 STRATEGIES="coreset"         SEEDS="38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh 
+
+B=10 DEVICE=cuda:4 STRATEGIES="cluster_margin"         SEEDS="10 24" ./thesis/chapter_5/run_5_1_b_ablation.sh
+B=5 DEVICE=cuda:4 STRATEGIES="cluster_margin"         SEEDS="10 24" ./thesis/chapter_5/run_5_1_b_ablation.sh
+
+B=10 DEVICE=cuda:4 STRATEGIES="cluster_margin"         SEEDS="38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh
+B=5 DEVICE=cuda:4 STRATEGIES="cluster_margin"         SEEDS="38 42 57" ./thesis/chapter_5/run_5_1_b_ablation.sh
+
+
+python3 thesis/chapter_5/plot_b_ablation.py
+```
 
 ---
 

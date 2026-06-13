@@ -27,6 +27,10 @@ BASE = os.path.join(REPO, "classification", "exp_results")
 
 # 方法 → 4.4 顏色 / b₀=2.5 的 marker（保持與 4.4 一模一樣）
 METHOD = {k: (c, m) for _, items in GROUPS for k, _l, c, m in items}
+# 圖標題顯示名（與 4.4 legend 一致）
+DISPLAY = {"margin": "Margin", "coreset": "Core-set", "badge": "BADGE",
+           "cluster_margin": "Cluster-Margin", "conf": "Confidence", "entropy": "Entropy",
+           "typiclust": "TypiClust"}
 
 def b0_dir(b0):
     if str(b0) == "2.5":
@@ -195,7 +199,7 @@ def plot_method(method, aug, out_dir):
     ax.set_xlabel(r"Labeled Training Data Ratio $\rho$ (%)", fontsize=FONT_LABEL, labelpad=10)
     ax.set_ylabel("Accuracy (%)", fontsize=FONT_LABEL, labelpad=10)
     ax.set_xticks([5, 10, 20, 30, 40, 50, 60])
-    ax.set_title(method.capitalize(), fontsize=FONT_LABEL, pad=10)
+    ax.set_title(DISPLAY.get(method, method.capitalize()), fontsize=FONT_LABEL, pad=10)
     ax.legend(fontsize=18, framealpha=0.9, loc="lower right")
     style_ax(ax)
     fig.tight_layout()
@@ -209,7 +213,7 @@ def plot_method(method, aug, out_dir):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--aug", default="aug4")
-    ap.add_argument("--methods", nargs="+", default=["margin", "coreset", "badge"])
+    ap.add_argument("--methods", nargs="+", default=["margin", "coreset", "cluster_margin"])
     ap.add_argument("--out_dir", default=os.path.join(os.path.dirname(__file__), "figs"))
     args = ap.parse_args()
     for m in args.methods:
