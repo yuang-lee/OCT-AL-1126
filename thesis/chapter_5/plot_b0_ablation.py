@@ -58,6 +58,10 @@ B0S = [("2.5", None, "-", 0.00),
        ("10", "o", "-", 0.55),
        ("20", "^", "-", 1.00)]
 
+# 依「portion 值」統一顏色與 marker → b 與 b₀ 兩種圖在同一 portion（如 20%）完全一致。
+#   value: (PALETTE index, marker；None = 用該方法 4.4 marker)
+VALUE_STYLE = {"2.5": (0, None), "5": (1, "o"), "10": (2, "^"), "20": (3, "P")}
+
 # 各 marker 形狀的視覺面積不同 → 用 per-shape 尺寸讓「看起來一樣大」。
 MSIZE = {"s": 8, "D": 8.5, "P": 11, "*": 12, "o": 9.5, "^": 10, "v": 10, "X": 9,
          "p": 10.5, "h": 10.5, "8": 10.5}
@@ -201,11 +205,12 @@ def plot_method(method, aug, out_dir):
 
     fig, ax = plt.subplots(figsize=(12, 8))
     pal = PALETTE.get(method, [color])
-    for i, (b0, mk, ls, amt) in enumerate(B0S):
+    for b0, mk, ls, amt in B0S:
         if b0 not in curves:
             continue
-        marker = base_marker if mk is None else mk         # b₀=2.5 用 4.4 marker
-        col = pal[i] if i < len(pal) else pal[-1]          # index 0 = 4.4 原色；之後手挑色
+        idx, vmk = VALUE_STYLE.get(b0, (0, None))          # 依 portion 值決定色與 marker（b/b₀ 同值同樣式）
+        marker = base_marker if vmk is None else vmk
+        col = pal[idx] if idx < len(pal) else pal[-1]
 
         ps = sorted(curves[b0])
         mean = np.array([curves[b0][p][0] for p in ps])

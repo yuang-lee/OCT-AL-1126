@@ -19,7 +19,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
-from plot_b0_ablation import (pool_strategy_dir, per_seed_dir, PALETTE, MSIZE,
+from plot_b0_ablation import (pool_strategy_dir, per_seed_dir, PALETTE, MSIZE, VALUE_STYLE,
                               METHOD, DISPLAY, BASE)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "chapter_4"))
 from plot_al_curve import random_baseline, style_ax, FONT_LABEL, _fmt_lr
@@ -98,11 +98,12 @@ def plot_method(method, aug, out_dir):
 
     fig, ax = plt.subplots(figsize=(12, 8))
     pal = PALETTE.get(method, [color])
-    for i, (b, mk, amt) in enumerate(BVARIANTS):
+    for b, mk, amt in BVARIANTS:
         if b not in curves:
             continue
-        marker = base_marker if mk is None else mk
-        col = pal[i] if i < len(pal) else pal[-1]            # index 0 = 4.4 原色；之後手挑色
+        idx, vmk = VALUE_STYLE.get(b, (0, None))            # 依 portion 值決定色與 marker（b/b₀ 同值同樣式）
+        marker = base_marker if vmk is None else vmk
+        col = pal[idx] if idx < len(pal) else pal[-1]
         ps = sorted(curves[b])
         mean = np.array([curves[b][p][0] for p in ps]); std = np.array([curves[b][p][1] for p in ps])
         ax.plot(ps, mean, marker=marker, linestyle="-", color=col, linewidth=3,

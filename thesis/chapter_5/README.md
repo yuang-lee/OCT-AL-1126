@@ -30,14 +30,20 @@ b₀ = 2.5%、b = 2.5%。本節各別變化其一（**不交叉**，以免計算
   以「達 target 的 ρ」「曲線下面積 / 同 ρ 之 mean acc」比較，而非看起點。
 
 ```bash
-# ---- b₀ = 5% ----
-B0=5  DEVICE=cuda:0 STRATEGIES="margin"  SEEDS="10 24 38 42 57" ./thesis/chapter_5/run_5_1_b0_ablation.sh
-B0=5  DEVICE=cuda:1 STRATEGIES="coreset" SEEDS="10 24 38 42 57" ./thesis/chapter_5/run_5_1_b0_ablation.sh
-B0=5  DEVICE=cuda:2 STRATEGIES="badge"   SEEDS="10 24 38 42 57" ./thesis/chapter_5/run_5_1_b0_ablation.sh
 
 # ---- b₀ = 10% ----
-B0=10 DEVICE=cuda:3 STRATEGIES="margin"  SEEDS="10 24 38 42 57" ./thesis/chapter_5/run_5_1_b0_ablation.sh
-B0=10 DEVICE=cuda:4 STRATEGIES="coreset" SEEDS="10 24 38 42 57" ./thesis/chapter_5/run_5_1_b0_ablation.sh
+B0=10 DEVICE=cuda:3 STRATEGIES="margin"  SEEDS="10 24" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+B0=10 DEVICE=cuda:3 STRATEGIES="margin"  SEEDS="38 42" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+B0=10 DEVICE=cuda:3 STRATEGIES="margin"  SEEDS="57" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+
+B0=10 DEVICE=cuda:5 STRATEGIES="coreset"  SEEDS="10 24" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+B0=10 DEVICE=cuda:5 STRATEGIES="coreset"  SEEDS="38 42" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+B0=10 DEVICE=cuda:5 STRATEGIES="coreset"  SEEDS="57" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+
+B0=10 DEVICE=cuda:0 STRATEGIES="cluster_margin" SEEDS="10 24" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+B0=10 DEVICE=cuda:0 STRATEGIES="cluster_margin" SEEDS="38 42" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+B0=10 DEVICE=cuda:9 STRATEGIES="cluster_margin" SEEDS="57" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
+
 
 # ---- b₀ = 20% ----
 B0=20 DEVICE=cuda:9 STRATEGIES="margin"  SEEDS="10 24" ./thesis/chapter_5/run_5_1_b0_ablation.sh # 已下
